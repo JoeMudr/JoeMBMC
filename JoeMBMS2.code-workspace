@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"cwctype": "cpp",
+			"cinttypes": "cpp"
+		}
+	}
+}

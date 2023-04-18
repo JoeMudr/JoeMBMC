@@ -1,0 +1,3 @@
+.platformio/packages/framework-arduinoteensy/cores/teensy3/pins_teensy.c
+--> Line 590
+#define TEENSY_INIT_USB_DELAY_BEFORE 2000
