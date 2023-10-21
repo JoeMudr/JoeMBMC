@@ -1,0 +1,6 @@
+(fp_lib_table
+  (lib (name "Library")(type "KiCad")(uri "${KIPRJMOD}/Library.pretty")(options "")(descr ""))
+  (lib (name "teensy")(type "KiCad")(uri "${KIPRJMOD}/teensy.pretty")(options "")(descr ""))
+  (lib (name "KiCAD_Libs-master")(type "KiCad")(uri "${KIPRJMOD}/KiCAD_Libs-master/Footprints/MRV_SMD_Packages.pretty")(options "")(descr ""))
+  (lib (name "JoeMBMS")(type "KiCad")(uri "${KIPRJMOD}/JoeMBMS.pretty")(options "")(descr ""))
+)

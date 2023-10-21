@@ -1,5 +1,6 @@
 #include <Arduino.h> 
 
+void Reset_Cause(uint32_t resetStatusReg);
 void mAmpsec_calc();
 void Alarm_Check();
 void BalanceCells_Check();
@@ -7,8 +8,8 @@ void Balancing();
 void BMS_revive();
 byte Vehicle_CondCheck(byte tmp_status);
 byte ESS_CondCheck(byte tmp_status);
-void CAN0_start();
-void CAN0_reset();
+void can1_start();
+void can1_reset();
 void SOC_charged();
 void CAP_recalc();
 bool CO_NMT(uint32_t CO_Target_ID, uint8_t CO_Target_State);

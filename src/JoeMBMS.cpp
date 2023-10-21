@@ -33,18 +33,21 @@
 #include <SPI.h>
 #include <Filters.h>//https://github.com/JonHub/Filters
 #include <Serial_CAN_Module_TeensyS2.h> //https://github.com/tomdebree/Serial_CAN_Teensy
-#include <Watchdog.h>
+#include <Watchdog_t4.h>
 
-//[ToDo] Watchdog?
+/*
+//[ToDo] Reboot
 #define RESTART_ADDR       0xE000ED0C
 #define READ_RESTART()     (*(volatile uint32_t *)RESTART_ADDR)
 #define WRITE_RESTART(val) ((*(volatile uint32_t *)RESTART_ADDR) = (val))
 #define CPU_REBOOT WRITE_RESTART(0x5FA0004)
+*/
 
 /////Version Identifier/////////
-int firmver = 230405;
+int firmver = 231020;
 
-FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> Can0;
+FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> can1;
+FlexCAN_T4<CAN2, RX_SIZE_256, TX_SIZE_16> can2;
 Serial_CAN can; //this uses Serial2!
 BMSModuleManager bms;
 EEPROMSettings settings;
@@ -56,18 +59,18 @@ FilterOnePole lowpassFilter( LOWPASS, filterFrequency );
 //BMS wiring//
 const int ACUR2 = A0; // current 1
 const int ACUR1 = A1; // current 2
-const int IN1_Key = 17; // input 1 - high active
-const int IN2_Gen = 16; // input 2 - high active
-const int IN3_AC = 18; // input 3 - high active
-const int IN4 = 19; // input 4 - high active
-const int OUT1 = 11;// output 1 - high active
-const int OUT2 = 12;// output 2 - high active
-const int OUT3 = 20;// output 3 - high active
-const int OUT4 = 21;// output 4 - high active
-const int OUT5 = 22;// output 5 - Low active / PWM
-const int OUT6 = 23;// output 6 - Low active / PWM
-const int OUT7 = 5; // output 7 - Low active / PWM
-const int OUT8 = 6; // output 8 - Low active / PWM
+const int IN1_Key = 19; // input 1 - high active
+const int IN2_Gen = 18; // input 2 - high active
+const int IN3_AC = 20; // input 3 - high active
+const int IN4 = 21; // input 4 - high active
+const int OUT1 = 6;// output 1 - high active
+const int OUT2 = 5;// output 2 - high active
+const int OUT3 = 4;// output 3 - high active
+const int OUT4 = 3;// output 4 - high active
+const int OUT5 = 11;// output 5 - Low active / PWM
+const int OUT6 = 12;// output 6 - Low active / PWM
+const int OUT7 = 10; // output 7 - Low active / PWM
+const int OUT8 = 9; // output 8 - Low active / PWM
 const int led = 13;
 
 byte BMS_Stat = 0;
@@ -374,11 +377,21 @@ CAN_message_t SYNCMsg; //separate Msg for SYNC to not mess up the outMsg
 
 uint32_t lastUpdate;
 
-Watchdog watchdog;
+WDT_T4<WDT1> watchdog;
+WDT_timings_t watchdog_config;
+
+uint32_t lastResetCause;
 
 void setup(){
+
+  // Save copy of Reset Status Register
+  lastResetCause = SRC_SRSR;
+  // Clear all Reset Status Register bits
+  SRC_SRSR = (uint32_t)0x1FF;
+
   pinMode(IN1_Key, INPUT);
-  pinMode(IN2_Gen, INPUT);
+  pinMode(IN2_Gen, INPUT);  lastResetCause = SRC_SRSR;
+
   pinMode(IN3_AC, INPUT);
   pinMode(IN4, INPUT);
   pinMode(OUT1, OUTPUT); // 12V output
@@ -398,8 +411,8 @@ void setup(){
 
   EEPROM.get(0, settings);
   if (settings.version != EEPROM_VERSION){ loadSettings(); }
-//loadSettings();
-  CAN0_start();
+  //loadSettings();
+  can1_start();
 
    //if using enable pins on a transceiver they need to be set on
 
@@ -420,38 +433,13 @@ void setup(){
   // Display reason the Teensy was last reset
   SERIALCONSOLE.println();
   SERIALCONSOLE.println("Reason for last Reset: ");
-
-/*
-  if (RCM_SRS1 & RCM_SRS1_SACKERR)   SERIALCONSOLE.println("Stop Mode Acknowledge Error Reset");
-  if (RCM_SRS1 & RCM_SRS1_MDM_AP)    SERIALCONSOLE.println("MDM-AP Reset");
-  if (RCM_SRS1 & RCM_SRS1_SW)        SERIALCONSOLE.println("Software Reset");                   // reboot with SCB_AIRCR = 0x05FA0004
-  if (RCM_SRS1 & RCM_SRS1_LOCKUP)    SERIALCONSOLE.println("Core Lockup Event Reset");
-  if (RCM_SRS0 & RCM_SRS0_POR)       SERIALCONSOLE.println("Power-on Reset");                   // removed / applied power
-  if (RCM_SRS0 & RCM_SRS0_PIN)       SERIALCONSOLE.println("External Pin Reset");               // Reboot with software download
-  if (RCM_SRS0 & RCM_SRS0_WDOG)      SERIALCONSOLE.println("Watchdog(COP) Reset");              // WDT timed out
-  if (RCM_SRS0 & RCM_SRS0_LOC)       SERIALCONSOLE.println("Loss of External Clock Reset");
-  if (RCM_SRS0 & RCM_SRS0_LOL)       SERIALCONSOLE.println("Loss of Lock in PLL Reset");
-  if (RCM_SRS0 & RCM_SRS0_LVD)       SERIALCONSOLE.println("Low-voltage Detect Reset");
-  SERIALCONSOLE.println();
-  ///////////////////
-
+  Reset_Cause(lastResetCause);
 
   // enable WDT
-  noInterrupts();                                         // don't allow interrupts while setting up WDOG
-  WDOG_UNLOCK = WDOG_UNLOCK_SEQ1;                         // unlock access to WDOG registers
-  WDOG_UNLOCK = WDOG_UNLOCK_SEQ2;
-  delayMicroseconds(1);                                   // Need to wait a bit..
+  //watchdog_config.trigger = 5; // [ToDo] ?
+  //watchdog_config.timeout = 1; //[ToDo]
+  watchdog.begin(watchdog_config);
 
-  WDOG_TOVALH = 0x1000;
-  WDOG_TOVALL = 0x0000;
-  WDOG_PRESC  = 0;
-  WDOG_STCTRLH |= WDOG_STCTRLH_ALLOWUPDATE |
-                  WDOG_STCTRLH_WDOGEN | WDOG_STCTRLH_WAITEN |
-                  WDOG_STCTRLH_STOPEN | WDOG_STCTRLH_CLKSRC;
-  interrupts();
-  /////////////////
-*/
-  watchdog.enable(Watchdog::TIMEOUT_1S);
 
   SERIALBMS.begin(612500); //Tesla serial bus
 #if defined (__arm__) && defined (__SAM3X8E__)
@@ -510,7 +498,7 @@ void loop(){
     if (debug_CSV){ bms.printAllCSV(millis(), currentact, SOC); }
     if (debug_Input){ Input_Debug(); }
     if (debug_Output){ Output_debug(); }
-    else{ Gauge_update(); }
+//    else{ Gauge_update(); }
     
     SOC_update();
     //CAN_BMS_send(); // [ToDO] reactivate? 
@@ -520,14 +508,66 @@ void loop(){
     if (settings.SerialCan == 0){ Dash_update(); }//Info on serial bus 2
     //if (settings.SerialCan == 2){ BT_update(); }// --> Bluetooth App
     
-    //WDOG_reset();
-    watchdog.reset();
+    //WDT reset;
+    watchdog.feed();
   }
 
 }
 
+/* ==================================================================== */
+// i.MX RT1060 Processor Reference Manual, 21.8.3 SRC Reset Status Register
+void Reset_Cause(uint32_t resetStatusReg) {
+    bool info = false;
+
+    if (resetStatusReg & SRC_SRSR_TEMPSENSE_RST_B) {
+        Serial.println("Temperature Sensor Software Reset");
+        info = true;
+    }
+    if (resetStatusReg & SRC_SRSR_WDOG3_RST_B) {
+        Serial.println("IC Watchdog3 Timeout Reset");
+        info = true;
+    }
+    if (resetStatusReg & SRC_SRSR_JTAG_SW_RST) {
+        Serial.println("JTAG Software Reset");
+        info = true;
+    }
+    if (resetStatusReg & SRC_SRSR_JTAG_RST_B) {
+        Serial.println("High-Z JTAG Reset");
+        info = true;
+    }
+    if (resetStatusReg & SRC_SRSR_WDOG_RST_B) {
+        Serial.println("IC Watchdog Timeout Reset");
+        info = true;
+    }
+    if (resetStatusReg & SRC_SRSR_IPP_USER_RESET_B) {
+        Serial.println("Power-up Sequence (Cold Reset Event)");
+        info = true;
+    }
+    if (resetStatusReg & SRC_SRSR_CSU_RESET_B) {
+        Serial.println("Central Security Unit Reset");
+        info = true;
+    }
+    if (resetStatusReg & SRC_SRSR_LOCKUP_SYSRESETREQ) {
+        Serial.println("CPU Lockup or Software Reset");
+        info = true;
+        /* Per datasheet: "SW needs to write a value to SRC_GPR5
+         * before writing the SYSRESETREQ bit and use the SRC_GPR5
+         * value to distinguish if the reset is caused by SYSRESETREQ
+         * or CPU lockup."
+         */
+    }
+    if (resetStatusReg & SRC_SRSR_IPP_RESET_B) {
+        Serial.println("Power-up Sequence");
+        info = true;
+    }
+    if (!info) {
+        Serial.println("No status bits set in SRC Reset Status Register");
+    }
+}
+
+
 void CAN_handle(){
-  while (Can0.read(inMsg)){
+  while (can1.read(inMsg)){
     if (settings.cursens == Sen_Canbus){currentact =  SEN_CANread();}
     if (settings.mctype){MC_CAN_read();}
     if (debug_CAN){CAN_in_Debug();}
@@ -536,13 +576,13 @@ void CAN_handle(){
   if (settings.SerialCan == 1){SerialCanRecieve();}
 }
 
-void CAN0_start(){
-  Can0.begin();
-  Can0.setBaudRate(settings.CanBoud);
+void can1_start(){
+  can1.begin();
+  can1.setBaudRate(settings.CanBoud);
 }
 
-void CAN0_reset(){
-  Can0.reset();
+void can1_reset(){
+  can1.reset();
 };
 
 void Alarm_Check(){
@@ -1325,7 +1365,7 @@ void CAN_BMS_send() //BMS CAN Messages
   outMsg.buf[5] = highByte(discurrent);
   outMsg.buf[6] = lowByte(uint16_t((settings.UnderVDerateSetpoint * settings.Scells) * 10));
   outMsg.buf[7] = highByte(uint16_t((settings.UnderVDerateSetpoint * settings.Scells) * 10));
-  Can0.write(outMsg);
+  can1.write(outMsg);
 
   outMsg.id  = 0x355;
   outMsg.len = 8;
@@ -1337,7 +1377,7 @@ void CAN_BMS_send() //BMS CAN Messages
   outMsg.buf[5] = highByte(SOC * 10);
   outMsg.buf[6] = 0;
   outMsg.buf[7] = 0;
-  Can0.write(outMsg);
+  can1.write(outMsg);
 
   outMsg.id  = 0x356;
   outMsg.len = 8;
@@ -1349,7 +1389,7 @@ void CAN_BMS_send() //BMS CAN Messages
   outMsg.buf[5] = highByte(int16_t(bms.getAvgTemperature() * 10));
   outMsg.buf[6] = 0;
   outMsg.buf[7] = 0;
-  Can0.write(outMsg);
+  can1.write(outMsg);
 
   delay(2);
   outMsg.id  = 0x35A;
@@ -1362,7 +1402,7 @@ void CAN_BMS_send() //BMS CAN Messages
   outMsg.buf[5] = warning[1];// High Discharge Current | Low Temperature
   outMsg.buf[6] = warning[2];// Internal Failure | High Charge current
   outMsg.buf[7] = warning[3];// Cell Imbalance
-  Can0.write(outMsg);
+  can1.write(outMsg);
 /*
   msg.id  = 0x35E;
   msg.len = 8;
@@ -1374,7 +1414,7 @@ void CAN_BMS_send() //BMS CAN Messages
   msg.buf[5] = bmsname[5];
   msg.buf[6] = bmsname[6];
   msg.buf[7] = bmsname[7];
-  Can0.write(msg);
+  can1.write(msg);
 
   delay(2);
   msg.id  = 0x370;
@@ -1387,7 +1427,7 @@ void CAN_BMS_send() //BMS CAN Messages
   msg.buf[5] = bmsmanu[5];
   msg.buf[6] = bmsmanu[6];
   msg.buf[7] = bmsmanu[7];
-  Can0.write(msg);
+  can1.write(msg);
 */
   if (balancecells == 1){
     outMsg.id = 0x3c3;
@@ -1406,7 +1446,7 @@ void CAN_BMS_send() //BMS CAN Messages
     outMsg.buf[5] = 0x00;
     outMsg.buf[6] = 0x00;
     outMsg.buf[7] = 0x00;
-    Can0.write(outMsg);
+    can1.write(outMsg);
   }
 
  delay(2);
@@ -1420,7 +1460,7 @@ void CAN_BMS_send() //BMS CAN Messages
   outMsg.buf[5] = 0x00;
   outMsg.buf[6] = 0x00;
   outMsg.buf[7] = 0x00;
-  Can0.write(outMsg);
+  can1.write(outMsg);
 
   delay(2);
   outMsg.id  = 0x373;
@@ -1433,7 +1473,7 @@ void CAN_BMS_send() //BMS CAN Messages
   outMsg.buf[5] = highByte(uint16_t(bms.getLowTemperature() + 273.15));
   outMsg.buf[6] = lowByte(uint16_t(bms.getHighTemperature() + 273.15));
   outMsg.buf[7] = highByte(uint16_t(bms.getHighTemperature() + 273.15));
-  Can0.write(outMsg);
+  can1.write(outMsg);
 
   delay(2);
   outMsg.id  = 0x379; //Installed capacity
@@ -1509,7 +1549,7 @@ void Menu(){
         case 8: menu_current = Menu_CAN; Menu(); break;  
         case 9: menu_current = Menu_Exp; Menu(); break;   
         case 10: menu_current = Menu_Debug; Menu(); break; 
-        case 11: CPU_REBOOT; break;        
+        //case 11: CPU_REBOOT; break;        //[ToDo]
         case 12: loadSettings(); Menu(); SERIALCONSOLE.println("::::::Defaults loaded::::::"); break;    
         case 13: settings.ESSmode = !settings.ESSmode; menu_current = Menu_Start; Menu(); break;       
         case 120: (_reboot_Teensyduino_()); //-> hidden Program Mode (x)
@@ -1899,12 +1939,12 @@ void Menu(){
     case Menu_CAN:
       switch (menu_option){
         case 1: settings.CanInterval = menu_option_val; 
-          CAN0_reset();
+          can1_reset();
           Menu(); 
         break;
         case 2: 
           settings.CanBoud = menu_option_val * 1000;
-          CAN0_reset();
+          can1_reset();
           Menu(); 
         break;  
         case 111: CO_Send_SDO(0x26,2,0,0x1800,0x02,0); break; // "o" for SDO
@@ -2211,7 +2251,7 @@ void CAN_chargercomms(){
       outMsg.buf[6] = 0x00;
       outMsg.buf[7] = 0x00;
 
-      Can0.write(outMsg);
+      can1.write(outMsg);
       outMsg.flags.extended = 0;
     break;
 
@@ -2226,7 +2266,7 @@ void CAN_chargercomms(){
       outMsg.buf[5] = lowByte(chargecurrent);
       outMsg.buf[6] = highByte(chargecurrent);
 
-      Can0.write(outMsg);
+      can1.write(outMsg);
     break;
 
     case Charger_BrusaNLG5:
@@ -2245,7 +2285,7 @@ void CAN_chargercomms(){
       outMsg.buf[6] = lowByte(chargecurrent);
       outMsg.buf[3] = highByte(uint16_t(((settings.ChargeVSetpoint * settings.Scells ) - chargerendbulk) * 10));
       outMsg.buf[4] = lowByte(uint16_t(((settings.ChargeVSetpoint * settings.Scells ) - chargerendbulk)  * 10));
-      Can0.write(outMsg);
+      can1.write(outMsg);
 
       delay(2);
 
@@ -2263,14 +2303,14 @@ void CAN_chargercomms(){
       outMsg.buf[4] = lowByte(uint16_t(((settings.ChargeVSetpoint * settings.Scells ) - chargerend) * 10));
       outMsg.buf[5] = highByte(chargecurrent);
       outMsg.buf[6] = lowByte(chargecurrent);
-      Can0.write(outMsg);
+      can1.write(outMsg);
     break;
 
     case Charger_ChevyVolt:
       outMsg.id  = 0x30E;
       outMsg.len = 1;
       outMsg.buf[0] = 0x02; //only HV charging , 0x03 hv and 12V charging
-      Can0.write(outMsg);
+      can1.write(outMsg);
 
       outMsg.id  = 0x304;
       outMsg.len = 4;
@@ -2284,7 +2324,7 @@ void CAN_chargercomms(){
         outMsg.buf[2] = highByte( 400);
         outMsg.buf[3] = lowByte( 400);
       }
-      Can0.write(outMsg);
+      can1.write(outMsg);
     break;
 
     case Charger_Coda:
@@ -2308,7 +2348,7 @@ void CAN_chargercomms(){
         outMsg.buf[6] = 0x96;
       }
       outMsg.buf[7] = 0x01; //HV charging
-      Can0.write(outMsg);
+      can1.write(outMsg);
     break;
   }
 }
@@ -2367,7 +2407,7 @@ bool CO_NMT(uint32_t CO_Target_ID, uint8_t CO_Target_State){
     //0x01 Start Node, 0x02 Stop Node, 0x80 Pre-Operational, 0x81 reset application, 0x82 reset communication
     outMsg.buf[0] = CO_Target_State;
     outMsg.buf[1] = CO_Target_ID;
-    Can0.write(outMsg);
+    can1.write(outMsg);
     return 1;
   }else{return 0;}
 }
@@ -2377,7 +2417,7 @@ void CO_SYNC(){
   if(settings.mctype == Curtis){
     SYNCMsg.id = 0x80;
     SYNCMsg.len = 0;
-    Can0.write(SYNCMsg);
+    can1.write(SYNCMsg);
   //  CO_Send_PDO1(0x26);
   //  CO_Send_PDO2(0x26);
     //if(debug_CAN){CAN_out_debug();}
@@ -2396,7 +2436,7 @@ void CO_Send_PDO1(uint32_t CO_Target_ID){
   outMsg.buf[5] = 0x00;
   outMsg.buf[6] = 0x00;
   outMsg.buf[7] = 0x00;
-  Can0.write(outMsg);
+  can1.write(outMsg);
   if(debug_CAN){CAN_out_debug();}
 }
 
@@ -2412,7 +2452,7 @@ void CO_Send_PDO2(uint32_t CO_Target_ID){
   outMsg.buf[5] = 0x00;
   outMsg.buf[6] = 0x00;
   outMsg.buf[7] = 0x00;
-  Can0.write(outMsg);
+  can1.write(outMsg);
   if(debug_CAN){CAN_out_debug();}
 
 }
@@ -2472,7 +2512,7 @@ void CO_Send_SDO(uint32_t CO_Target_ID, uint8_t CCS, uint8_t expedited, uint16_t
   outMsg.buf[5] = 0x00;
   outMsg.buf[6] = 0x00;
   outMsg.buf[7] = 0x00; // highest Data, Last byte
-  Can0.write(outMsg);
+  can1.write(outMsg);
   if(debug_CAN){CAN_out_debug();}
 }
 
