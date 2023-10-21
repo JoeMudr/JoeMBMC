@@ -959,7 +959,16 @@ float SEN_CANread(){
   signed long CANmilliamps = 0;
   switch (inMsg.id){
     //LEM CAB
-    case 0x3c2: CANmilliamps = SEN_LEMCAB(); break;
+    case 0x3c0: CANmilliamps = SEN_LEMCAB(); break; //CAB 300-C/SP3-000
+    case 0x3c1: CANmilliamps = SEN_LEMCAB(); break; //CAB 300-C/SP3-001
+    case 0x3c2: CANmilliamps = SEN_LEMCAB(); break; //CAB 300-C/SP3-002 & CAB 300-C/SP3-010 & CAB-500 (all Versions)
+    case 0x3c3: CANmilliamps = SEN_LEMCAB(); break; //CAB 300-C/SP3-003
+    case 0x3c4: CANmilliamps = SEN_LEMCAB(); break; //CAB 300-C/SP3-004
+    case 0x3c5: CANmilliamps = SEN_LEMCAB(); break; //CAB 300-C/SP3-005
+    case 0x3c6: CANmilliamps = SEN_LEMCAB(); break; //CAB 300-C/SP3-006
+    case 0x3c7: CANmilliamps = SEN_LEMCAB(); break; //CAB 300-C/SP3-007
+    case 0x3c8: CANmilliamps = SEN_LEMCAB(); break; //CAB 300-C/SP3-008
+    case 0x3c9: CANmilliamps = SEN_LEMCAB(); break; //CAB 300-C/SP3-009
     //IsaScale
     case 0x521: CANmilliamps = inMsg.buf[5] + (inMsg.buf[4] << 8) + (inMsg.buf[3] << 16) + (inMsg.buf[2] << 24); break;
     case 0x522: ISAVoltage1 = inMsg.buf[5] + (inMsg.buf[4] << 8) + (inMsg.buf[3] << 16) + (inMsg.buf[2] << 24); break;
