@@ -959,6 +959,7 @@ float SEN_CANread(){
   signed long CANmilliamps = 0;
   switch (inMsg.id){
     //LEM CAB
+    // [ToDo] CAB1500 has same ID. ALso same Data?
     case 0x3c0: CANmilliamps = SEN_LEMCAB(); break; //CAB 300-C/SP3-000
     case 0x3c1: CANmilliamps = SEN_LEMCAB(); break; //CAB 300-C/SP3-001
     case 0x3c2: CANmilliamps = SEN_LEMCAB(); break; //CAB 300-C/SP3-002 & CAB 300-C/SP3-010 & CAB-500 (all Versions)
