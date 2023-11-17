@@ -7,4 +7,5 @@
   (lib (name "digikey-footprints")(type "KiCad")(uri "${KIPRJMOD}/digikey-kicad-library-master/digikey-footprints.pretty")(options "")(descr ""))
   (lib (name "Molex_48_Pin")(type "KiCad")(uri "${KIPRJMOD}/Molex_48_Pin")(options "")(descr ""))
   (lib (name "TLP293-4")(type "KiCad")(uri "${KIPRJMOD}/ul_TLP2934/TLP293-4.pretty")(options "")(descr ""))
+  (lib (name "kicad-footprints-master")(type "KiCad")(uri "${KIPRJMOD}/kicad-footprints-master")(options "")(descr ""))
 )
