@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"cwctype": "cpp",
+			"cinttypes": "cpp",
+			"*.tpp": "cpp"
+		},
+		"git.ignoreLimitWarning": true
+	}
+}
