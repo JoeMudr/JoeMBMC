@@ -11,7 +11,7 @@
 #define SERIALBMS  Serial2
 
 // Secondary CAN / Serial
-#define canSerial Serial4
+#define DisplaySerial Serial4
 
 #define REG_DEV_STATUS      0
 #define REG_GPAI            1

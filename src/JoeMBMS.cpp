@@ -32,7 +32,7 @@
 #include <FlexCAN_T4.h> //https://github.com/tonton81/FlexCAN_T4
 #include <SPI.h>
 #include <Filters.h>//https://github.com/JonHub/Filters
-#include <Serial_CAN_Module_TeensyS2.h> //https://github.com/tomdebree/Serial_CAN_Teensy
+//#include <Serial_CAN_Module_TeensyS2.h> //https://github.com/tomdebree/Serial_CAN_Teensy
 #include <Watchdog_t4.h>
 
 /*
@@ -48,7 +48,7 @@ int firmver = 231125;
 
 FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> can1;
 FlexCAN_T4<CAN2, RX_SIZE_256, TX_SIZE_16> can2;
-Serial_CAN can; //this uses Serial2!
+//Serial_CAN can; //this uses Serial2!
 BMSModuleManager bms;
 EEPROMSettings settings;
 
@@ -425,10 +425,10 @@ void setup(){
   //delay(2000);  //just for easy debugging. It takes a few seconds for USB to come up properly on most OS's  
   SERIALCONSOLE.begin(115200);
   SERIALCONSOLE.setTimeout(20);
-  SERIALCONSOLE.println("Starting up!");
-  SERIALCONSOLE.println("JoeMBMS -Tesla-");
+  SERIALCONSOLE.println("Starting up...");
+  SERIALCONSOLE.println("JoeM BMC");
 
-  canSerial.begin(115200); //display and can adpater canbus
+  DisplaySerial.begin(115200); //display and can adpater canbus
 
   // Display reason the Teensy was last reset
   SERIALCONSOLE.println();
@@ -573,7 +573,7 @@ void CAN_handle(){
     if (debug_CAN){CAN_in_Debug();}
   }
 
-  if (settings.SerialCan == 1){SerialCanRecieve();}
+  //if (settings.SerialCan == 1){SerialCanRecieve();}
 }
 
 void can1_start(){
@@ -2239,11 +2239,11 @@ void Dash_update(){
 }
 
 void Nextion_send(String var, String val){
-  canSerial.print(var);
-  canSerial.print(val);
-  canSerial.write(0xff);
-  canSerial.write(0xff);
-  canSerial.write(0xff);  
+  DisplaySerial.print(var);
+  DisplaySerial.print(val);
+  DisplaySerial.write(0xff);
+  DisplaySerial.write(0xff);
+  DisplaySerial.write(0xff);  
 }
 
 void CAN_chargercomms(){
@@ -2363,6 +2363,7 @@ void CAN_chargercomms(){
   }
 }
 
+/*
 void SerialCanRecieve(){
   if (can.recv(&SerialCANid, SerialCANdta)){
     SERIALCONSOLE.print("GET DATA FROM ID: ");
@@ -2375,6 +2376,7 @@ void SerialCanRecieve(){
     SERIALCONSOLE.println();
   }
 }
+*/
 
 void MC_CAN_read(){
   uint32_t tmp_id = 0;
