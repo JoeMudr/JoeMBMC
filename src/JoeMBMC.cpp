@@ -44,11 +44,11 @@
 */
 
 /////Version Identifier/////////
-int firmver = 231125;
+int firmver = 231202;
 
 FlexCAN_T4<CAN1, RX_SIZE_256, TX_SIZE_16> can1;
 FlexCAN_T4<CAN2, RX_SIZE_256, TX_SIZE_16> can2;
-//Serial_CAN can; //this uses Serial2!
+
 BMSModuleManager bms;
 EEPROMSettings settings;
 
@@ -56,7 +56,7 @@ EEPROMSettings settings;
 float filterFrequency = 5.0 ;
 FilterOnePole lowpassFilter( LOWPASS, filterFrequency );
 
-//BMS wiring//
+//BMC wiring//
 const int ACUR2 = A0; // current 1
 const int ACUR1 = A1; // current 2
 const int IN1_Key = 19; // input 1 - high active
@@ -73,9 +73,9 @@ const int OUT7 = 10; // output 7 - Low active / PWM
 const int OUT8 = 9; // output 8 - Low active / PWM
 const int led = 13;
 
-byte BMS_Stat = 0;
+byte BMC_Stat = 0;
 
-//bms status values
+//BMC status values
 #define Stat_Boot 0
 #define Stat_Ready 1
 #define Stat_Drive 2
@@ -102,7 +102,7 @@ byte BMS_Stat = 0;
 #define Charger_Victron 5
 #define Charger_Coda 6
 
-//CO States
+//CANOpen States
 #define co_NMT_operational 0x01
 #define co_NMT_stop 0x02
 #define co_NMT_preop 0x80
@@ -168,8 +168,10 @@ unsigned char alarm[4] = {0, 0, 0, 0};
 unsigned char warning[4] = {0, 0, 0, 0};
 
 unsigned long warning_timer = 0;
-unsigned char bmsname[8] = {'J', 'O', 'E', 'M', ' ', 'B', 'M', 'S'};
-unsigned char bmsmanu[8] = {'J', 'O', 'E', 'M', ' ', 'T', 'E', 'C'};
+
+unsigned char bmcname[8] = {'J', 'O', 'E', 'M', ' ', 'B', 'M', 'C'};
+unsigned char bmcmanu[8] = {'J', 'O', 'E', 'M', ' ', 'T', 'E', 'C'};
+
 signed long ISAVoltage1, ISAVoltage2, ISAVoltage3 = 0; //mV only with ISAscale sensor
 byte Cellsbalancing[MAX_MODULE_ADDR+1];
 
@@ -467,9 +469,9 @@ void loop(){
 
   if (!debug_Output){
     //ContCon();
-    if (settings.ESSmode){BMS_Stat = ESS_CondCheck(BMS_Stat);}
-    else{BMS_Stat = Vehicle_CondCheck(BMS_Stat);}
-    set_BMS_Status(BMS_Stat);
+    if (settings.ESSmode){BMC_Stat = ESS_CondCheck(BMC_Stat);}
+    else{BMC_Stat = Vehicle_CondCheck(BMC_Stat);}
+    set_BMC_Status(BMC_Stat);
     set_OUTs();
   }
 
@@ -501,7 +503,7 @@ void loop(){
 //    else{ Gauge_update(); }
     
     SOC_update();
-    //CAN_BMS_send(); // [ToDO] reactivate? 
+    //CAN_BMC_send(); // [ToDO] reactivate? 
     
     Currentavg_Calc();
 
@@ -513,7 +515,7 @@ void loop(){
   }
 
 }
-
+//[ToTest]
 /* ==================================================================== */
 // i.MX RT1060 Processor Reference Manual, 21.8.3 SRC Reset Status Register
 void Reset_Cause(uint32_t resetStatusReg) {
@@ -684,48 +686,50 @@ byte ESS_CondCheck(byte tmp_status){
 }
 
 byte Warn_Check(){
+  /*
   Out_States[0][Out_Err_Warn] = 0;
   Out_States[0][Out_Warning] = 0; 
+  */
   if (warning[0] || warning[1] || warning[2] || warning[3]){
-    Out_States[0][Out_Err_Warn] = 1;
-    Out_States[0][Out_Warning] = 1;
+    set_OUT_States(Out_Err_Warn);
+    set_OUT_States(Out_Warning);
     return 1;
   }
   return 0;
 }
 
-void set_BMS_Status(byte status){
+void set_BMC_Status(byte status){
   switch (status){
     case Stat_Boot:  //[ToDO] unnötig? Ändern in Wartungsmodus?
-      for (byte i = 0; i < 12; i++){Out_States[0][i] = 0;} //all off
+      set_OUT_States(); // all off
       balancecells = 0;
     break;
     case Stat_Ready:
       precharged = 0;
-      for (byte i = 0; i < 12; i++){Out_States[0][i] = 0;} //all off
+      set_OUT_States(); // all off
       BalanceCells_Check();
       Warn_Check();
     break;
     case Stat_Drive:
-      for (byte i = 0; i < 12; i++){Out_States[0][i] = 0;} //all off
-      Out_States[0][Out_Cont_Pos] = 1;
-      Out_States[0][Out_Cont_Neg] = 1;
-      Out_States[0][Out_Gauge] = 1;
+      set_OUT_States(); // all off
+      set_OUT_States(Out_Cont_Pos);
+      set_OUT_States(Out_Cont_Neg);
+      set_OUT_States(Out_Gauge);
       balancecells = 0;
       DischargeCurrentLimit();
       Warn_Check();
     break;
     case Stat_Precharge:
-      for (byte i = 0; i < 12; i++){Out_States[0][i] = 0;} //all off
+      set_OUT_States(); // all off
       Prechargecon();
       balancecells = 0;
     break;    
     case Stat_Charge:
-      for (byte i = 0; i < 12; i++){Out_States[0][i] = 0;} //all off
+      set_OUT_States(); // all off
       CAP_recalc();
       if (Settings_unsaved){EEPROM.put(0, settings); Settings_unsaved = 0; SERIALCONSOLE.println("--Saved--");}
-      Out_States[0][Out_Charge] = 1; // enable charger
-      if (digitalRead(IN1_Key) == HIGH){Out_States[0][Out_Gauge] = 1;} // enable gauge if key is on
+      set_OUT_States(Out_Charge); // enable charger
+      if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on
       BalanceCells_Check();
       if (millis() - looptime1 > settings.CanInterval){
         looptime1 = millis();
@@ -735,8 +739,8 @@ void set_BMS_Status(byte status){
       Warn_Check();
     break;
     case Stat_Charged:
-      for (byte i = 0; i < 12; i++){Out_States[0][i] = 0;} //all off   
-      if (digitalRead(IN1_Key) == HIGH){Out_States[0][Out_Gauge] = 1;} // enable gauge if key is on    
+      set_OUT_States(); // all off
+      if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
       BalanceCells_Check();
       chargecurrentlast = 0;
       Warn_Check();
@@ -744,21 +748,21 @@ void set_BMS_Status(byte status){
     case Stat_Error:
       if (!error_timer){ error_timer = millis() + settings.error_delay; }//10s delay before turning everything off
       if (millis() > error_timer){
-        for (byte i = 0; i < 12; i++){Out_States[0][i] = 0;} //all off
-        Out_States[0][Out_Error] = 1;
-        Out_States[0][Out_Err_Warn] = 1;
-        if (digitalRead(IN1_Key) == HIGH){Out_States[0][Out_Gauge] = 1;} // enable gauge if key is on    
+        set_OUT_States(); // all off
+        set_OUT_States(Out_Error);
+        set_OUT_States(Out_Err_Warn);
+        if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
         discurrent = 0;
         chargecurrent = 0;
         balancecells = 0;
       }
     break;
     case Stat_Healthy:
-      for (byte i = 0; i < 12; i++){Out_States[0][i] = 0;} //all off      
-      Out_States[0][Out_Discharge] = 1;
-      Out_States[0][Out_Cont_Pos] = 1;
-      Out_States[0][Out_Cont_Neg] = 1;
-      Out_States[0][Out_Gauge] = 1;
+      set_OUT_States(); // all off
+      set_OUT_States(Out_Discharge);
+      set_OUT_States(Out_Cont_Pos);
+      set_OUT_States(Out_Cont_Neg);
+      set_OUT_States(Out_Gauge);
       BalanceCells_Check();
       DischargeCurrentLimit();
       ChargeCurrentLimit();
@@ -794,10 +798,10 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.print("Firmware: ");
   SERIALCONSOLE.println(firmver);
   SERIALCONSOLE.println();
-  SERIALCONSOLE.print("BMS Status: ");
-  SERIALCONSOLE.print(BMS_Stat);
+  SERIALCONSOLE.print("BMC Status: ");
+  SERIALCONSOLE.print(BMC_Stat);
   SERIALCONSOLE.print(" ");
-    switch (BMS_Stat){
+    switch (BMC_Stat){
       case (Stat_Boot): SERIALCONSOLE.print("Boot"); break;
       case (Stat_Ready): SERIALCONSOLE.print("Ready"); break;
       case (Stat_Precharge): SERIALCONSOLE.print("Precharge"); break;
@@ -1093,7 +1097,7 @@ void Current_debug(){
 
 int ETA(){ // return minutes
   //[ToDo] weiter glätten! mögl. vordef./errechneten Durchschnittswert einbeziehen?
-  if(BMS_Stat == Stat_Charge){
+  if(BMC_Stat == Stat_Charge){
     return abs(mampsecond / 1000 / 60 / abs(currentavg/1000));
   }else{
     if (currentavg >= 0){
@@ -1178,12 +1182,12 @@ float CAP_Temp_alteration(){
 }
 
 void CAP_recalc(){
-  if ((BMS_Stat == Stat_Charge && abs(mampsecond) > (settings.CAP * 3600 * 1000)) || ((warning[0] & 0x10) && bms.getAvgTemperature() > 20.00)){
+  if ((BMC_Stat == Stat_Charge && abs(mampsecond) > (settings.CAP * 3600 * 1000)) || ((warning[0] & 0x10) && bms.getAvgTemperature() > 20.00)){
     settings.CAP = round((abs(mampsecond) / 3600) / 1000 / settings.Pstrings);
     Settings_unsaved = 1;
   }
   /*
-  if ((BMS_Stat == Stat_Charge && abs(mWs) > (settings.CAP_Wh * 3600 * 1000)) || ((warning[0] & 0x10) && bms.getAvgTemperature() > 20.00)){
+  if ((BMC_Stat == Stat_Charge && abs(mWs) > (settings.CAP_Wh * 3600 * 1000)) || ((warning[0] & 0x10) && bms.getAvgTemperature() > 20.00)){
     settings.CAP_Wh = round((abs(mWs) / 3600) / 1000);
     Settings_unsaved = 1;
   } 
@@ -1228,7 +1232,7 @@ byte find_OUT_Mapping(byte Function){
 Change the function of the given output
 OUT1 = 1 ...
 */
-void cycle_Out_Mapping(byte OUT){
+void cycle_OUT_Mapping(byte OUT){
   byte i = get_OUT_Mapping(OUT,0) + 1;
   if(OUT<5 && i==Out_Gauge){i++;} //Gauge not possible on 12V outputs
   while(find_OUT_Mapping(i)){i++;} //doubles not possible
@@ -1236,7 +1240,16 @@ void cycle_Out_Mapping(byte OUT){
   set_OUT_Mapping(OUT,i,get_OUT_Mapping(OUT,1));
 }
 
-//Control outputs
+/*
+no parameter = all functions off
+Use parameter (function) to activate corresponding function.
+*/
+void set_OUT_States(byte Function){
+  if (Function == 254){for (byte i = 0; i < 12; i++){Out_States[0][i] = 0;}} // all off
+  else {Out_States[0][Function] = 1;}
+}
+
+// Set output pins according to Out_States.
 void set_OUTs(){
   u_int32_t tmp_timer = millis() - cont_timer;
   for (byte i = 1; i < 9;i++){
@@ -1358,7 +1371,7 @@ void CurrentOffsetCalc(){
   SERIALCONSOLE.println("  ");
 }
 
-void CAN_BMS_send() //BMS CAN Messages
+void CAN_BMC_send() //BMC CAN Messages
 {
   outMsg.id  = 0x351;
   outMsg.len = 8;
@@ -1416,27 +1429,27 @@ void CAN_BMS_send() //BMS CAN Messages
 /*
   msg.id  = 0x35E;
   msg.len = 8;
-  msg.buf[0] = bmsname[0];
-  msg.buf[1] = bmsname[1];
-  msg.buf[2] = bmsname[2];
-  msg.buf[3] = bmsname[3];
-  msg.buf[4] = bmsname[4];
-  msg.buf[5] = bmsname[5];
-  msg.buf[6] = bmsname[6];
-  msg.buf[7] = bmsname[7];
+  msg.buf[0] = bmcname[0];
+  msg.buf[1] = bmcname[1];
+  msg.buf[2] = bmcname[2];
+  msg.buf[3] = bmcname[3];
+  msg.buf[4] = bmcname[4];
+  msg.buf[5] = bmcname[5];
+  msg.buf[6] = bmcname[6];
+  msg.buf[7] = bmcname[7];
   can1.write(msg);
 
   delay(2);
   msg.id  = 0x370;
   msg.len = 8;
-  msg.buf[0] = bmsmanu[0];
-  msg.buf[1] = bmsmanu[1];
-  msg.buf[2] = bmsmanu[2];
-  msg.buf[3] = bmsmanu[3];
-  msg.buf[4] = bmsmanu[4];
-  msg.buf[5] = bmsmanu[5];
-  msg.buf[6] = bmsmanu[6];
-  msg.buf[7] = bmsmanu[7];
+  msg.buf[0] = bmcmanu[0];
+  msg.buf[1] = bmcmanu[1];
+  msg.buf[2] = bmcmanu[2];
+  msg.buf[3] = bmcmanu[3];
+  msg.buf[4] = bmcmanu[4];
+  msg.buf[5] = bmcmanu[5];
+  msg.buf[6] = bmcmanu[6];
+  msg.buf[7] = bmcmanu[7];
   can1.write(msg);
 */
   if (balancecells == 1){
@@ -1823,17 +1836,17 @@ void Menu(){
     break;
     case Menu_Outputs:
       switch (menu_option){
-        case 1: cycle_Out_Mapping(1); Menu(); break;
-        case 2: cycle_Out_Mapping(2); Menu(); break;
-        case 3: cycle_Out_Mapping(3); Menu(); break;
-        case 4: cycle_Out_Mapping(4); Menu(); break;
-        case 5: cycle_Out_Mapping(5); Menu(); break;
+        case 1: cycle_OUT_Mapping(1); Menu(); break;
+        case 2: cycle_OUT_Mapping(2); Menu(); break;
+        case 3: cycle_OUT_Mapping(3); Menu(); break;
+        case 4: cycle_OUT_Mapping(4); Menu(); break;
+        case 5: cycle_OUT_Mapping(5); Menu(); break;
         case 6: set_OUT_Mapping(5,get_OUT_Mapping(5,0),menu_option_val); Menu(); break;
-        case 7: cycle_Out_Mapping(6); Menu(); break;
+        case 7: cycle_OUT_Mapping(6); Menu(); break;
         case 8: set_OUT_Mapping(6,get_OUT_Mapping(6,0),menu_option_val); Menu(); break;
-        case 9: cycle_Out_Mapping(7); Menu(); break;
+        case 9: cycle_OUT_Mapping(7); Menu(); break;
         case 10: set_OUT_Mapping(7,get_OUT_Mapping(7,0),menu_option_val); Menu(); break;
-        case 11: cycle_Out_Mapping(8); Menu(); break;
+        case 11: cycle_OUT_Mapping(8); Menu(); break;
         case 12: set_OUT_Mapping(8,get_OUT_Mapping(8,0),menu_option_val); Menu(); break;
         case 20: settings.Pretime = menu_option_val; Menu(); break;
         case 21: settings.Precurrent = menu_option_val; Menu(); break;
@@ -2188,13 +2201,13 @@ void Dash_update(){
   dashvolt = constrain(dashvolt, 0, 100);
 
   String eta = "";
-  if (BMS_Stat == Stat_Drive || BMS_Stat == Stat_Charge){
+  if (BMC_Stat == Stat_Drive || BMC_Stat == Stat_Charge){
     eta = "\"" + String(ETA() / 60) + "h " + String(ETA() % 60) + "m" + "\"";
   } else {
     eta = "\"-\"";
   }
   
-  switch (BMS_Stat){
+  switch (BMC_Stat){
       case (Stat_Boot): Nextion_send("stat.txt=", "\" Boot \""); break;
       case (Stat_Ready): Nextion_send("stat.txt=", "\" Ready \""); break;
       case (Stat_Precharge): Nextion_send("stat.txt=", "\" Precharge \""); break;
@@ -2229,7 +2242,7 @@ void Dash_update(){
 
   //Err_Warn-LED
   int Err_Warn = 0;
-  if (BMS_Stat == Stat_Error){
+  if (BMC_Stat == Stat_Error){
     Err_Warn = 63488; // red
   } else if (Warn_Check()){
     Err_Warn = 65504; // yellow
