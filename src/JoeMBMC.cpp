@@ -43,7 +43,7 @@
 */
 
 /////Version Identifier/////////
-int firmver = 231202;
+int firmver = 231218;
 
 BMSModuleManager bms;
 EEPROMSettings settings;
