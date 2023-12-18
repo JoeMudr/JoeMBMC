@@ -36,13 +36,12 @@
 
 #define MAX_MODULE_ADDR     0x3E
 
-#define EEPROM_VERSION      0x18    //update any time EEPROM struct below is changed.
+#define EEPROM_VERSION      0x19   //update any time EEPROM struct below is changed.
 #define EEPROM_PAGE         0
 
 typedef struct {
   byte version;
   byte checksum;
-  uint32_t CanBoud;
   byte batteryID;  //which battery ID should this board associate as on the CAN bus
   float OverVSetpoint; // in mV
   float UnderVSetpoint; // in mV
@@ -92,7 +91,6 @@ typedef struct {
   int ncur;
   int chargertype;
   byte nchargers;
-  uint16_t CanInterval;
   uint16_t CurDead;
   float DisTaper;
   byte ChargerDirect;
@@ -101,4 +99,9 @@ typedef struct {
   unsigned long error_delay;
   int Temp_Cap_Map[2][5] = {}; // [0][x] Temperature; [1][x] Percentage of Capacity
   byte Out_Map[2][9] = {}; // OUT1 = Out_Map[x][1]...; [0][x] Functions; [1][x] PWM
+  uint32_t CAN1_Speed;
+  uint32_t CAN2_Speed;
+  uint16_t CAN1_Interval;
+  uint16_t CAN2_Interval;
+  byte CAN_Map[5]; // index: 0 = BMC-Output; 1 = BMS Communication; 2 = Chargers; 3 = Current Sensors; 4 = MotorController // Values: 0 = not set; 1 = Can1; 2 = Can2; 3 = Can1 & Can2
 } EEPROMSettings;
