@@ -200,10 +200,6 @@ int chargerid2 = 0x638; //finishing charger (brusa)
 float chargerendbulk = 0; //V before Charge Voltage to turn off the bulk charger/s
 float chargerend = 0; //V before Charge Voltage to turn off the finishing charger/s
 
-//serial canbus expansion
-unsigned long SerialCANid = 0;
-unsigned char SerialCANdta[8];
-
 //variables
 byte output_debug_counter = 0;
 byte storagemode = 0;
@@ -513,7 +509,7 @@ void loop(){
     if (debug_CSV){ bms.printAllCSV(millis(), currentact, SOC); }
     if (debug_Input){ Input_Debug(); }
     if (debug_Output){ Output_debug(); }
-    else{ Gauge_update(); }
+    else{ Gauge_update(); } //WDT tripped?!
     
     SOC_update();
     //CAN_BMC_send(settings.CAN_Map[CAN_BMC]); // [ToDO] reactivate? 
@@ -579,40 +575,6 @@ void Reset_Cause(uint32_t resetStatusReg) {
         Serial.println("No status bits set in SRC Reset Status Register");
     }
 }
-
-
-void CAN_read(){
-  CAN_message_t MSG;
-
-  while (can1.read(MSG)){
-    if (settings.cursens == Sen_Canbus && settings.CAN_Map[CAN_Curr_Sen] & 1){currentact =  CAN_SEN_read(MSG);}
-    if (settings.mctype && settings.CAN_Map[CAN_MC] & 1){CAN_MC_read(MSG);}
-    if (debug_CAN1){CAN_Debug_IN(MSG);}
-  }
-  while (can2.read(MSG)){
-    if (settings.cursens == Sen_Canbus && settings.CAN_Map[CAN_Curr_Sen] & 2){currentact =  CAN_SEN_read(MSG);}
-    if (settings.mctype && settings.CAN_Map[CAN_MC] & 2){CAN_MC_read(MSG);}
-    if (debug_CAN2){CAN_Debug_IN(MSG);}
-  }
-}
-
-void can1_start(){
-  can1.begin();
-  can1.setBaudRate(settings.CAN1_Speed);
-}
-
-void can2_start(){
-  can2.begin();
-  can2.setBaudRate(settings.CAN2_Speed);
-}
-
-void can1_reset(){
-  can1.reset();
-};
-
-void can2_reset(){
-  can2.reset();
-};
 
 void Alarm_Check(){
  ///warnings
@@ -909,7 +871,7 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.print(abs(TCAP_Wh));
   SERIALCONSOLE.println("Wh");
   SERIALCONSOLE.print("Gauge PWM : ");
-  SERIALCONSOLE.println(map(SOC, 0, 100, settings.gaugelow, settings.gaugehigh));
+  SERIALCONSOLE.println(Gauge_update());
   SERIALCONSOLE.print("ETA : ");
   String eta = String(ETA() / 60) + "h " + String(ETA() % 60) + "m";
   SERIALCONSOLE.println(eta);
@@ -1041,21 +1003,14 @@ signed long CAN_SEN_VictronLynx(CAN_message_t MSG){
   return Victron_milliamps;
 }
 
-void Currentavg_Calc(){
-  //[ToDo] überarbeiten! (glätten, reset bei Statuswechsel)
-  currentavg_array[currentavg_counter] = currentact;
-  currentavg_counter++;
-  if(currentavg_counter > 59){currentavg_counter = 0;}
-  float current_temp = 0;
-  for (int i=0; i<60; i++){
-    current_temp += currentavg_array[i];
-  }
-  currentavg = current_temp / 60;
-}
-
-void CAN_Debug_IN(CAN_message_t MSG){
+void CAN_Debug_IN(CAN_message_t MSG, byte CanNr){
   int pgn = 0;
   //if ((MSG.id & 0x10000000) == 0x10000000){   // Determine if ID is standard (11 bits) or extended (29 bits)
+  switch (CanNr)
+  {
+  case 1: SERIALCONSOLE.print("CAN1 "); break;
+  case 2: SERIALCONSOLE.print("CAN2 "); break;
+  }
   SERIALCONSOLE.print("IN ");
   if (MSG.flags.extended){ //[ToTest] use FlexCAN parameter
     SERIALCONSOLE.println("ext:");
@@ -1072,6 +1027,18 @@ void CAN_Debug_IN(CAN_message_t MSG){
     SERIALCONSOLE.print(" ");
   }
   SERIALCONSOLE.println();
+}
+
+void Currentavg_Calc(){
+  //[ToDo] überarbeiten! (glätten, reset bei Statuswechsel)
+  currentavg_array[currentavg_counter] = currentact;
+  currentavg_counter++;
+  if(currentavg_counter > 59){currentavg_counter = 0;}
+  float current_temp = 0;
+  for (int i=0; i<60; i++){
+    current_temp += currentavg_array[i];
+  }
+  currentavg = current_temp / 60;
 }
 
 void Current_debug(){
@@ -1336,20 +1303,21 @@ void OUT_Debug(){
 
 //END new Output Control
 
-void Gauge_update(){ 
+byte Gauge_update(){ 
+  byte Gauge_PWM = 0;
+  if(!find_OUT_Mapping(Out_Gauge)){return 0;}
   if (debug_Gauge) {
     if (!debug_Gauge_timer){ debug_Gauge_timer = millis()+30000; }
-    if (millis() < debug_Gauge_timer){ analogWrite(OUT8, debug_Gauge_val);  }
+    if (millis() < debug_Gauge_timer){ Gauge_PWM = debug_Gauge_val;}
     else {
-      debug_Gauge = 0;
-      debug_Gauge_val = 0;
-      debug_Gauge_timer = 0;
+      debug_Gauge = debug_Gauge_val = debug_Gauge_timer = 0;
       Menu(); //go back to the menu since we came from there
     }
   } else { 
-    //analogWrite(OUT8, map(SOC, 0, 100, settings.gaugelow, settings.gaugehigh)); 
-    analogWrite(*Outputs[find_OUT_Mapping(Out_Gauge)], map(SOC, 0, 100, settings.gaugelow, settings.gaugehigh) * Out_States[0][Out_Gauge]);  //new output control
+    Gauge_PWM = map(SOC, 0, 100, settings.gaugelow, settings.gaugehigh) * Out_States[0][Out_Gauge];
   }
+  analogWrite(*Outputs[find_OUT_Mapping(Out_Gauge)], Gauge_PWM);
+  return Gauge_PWM;
 }
 
 void Prechargecon(){
@@ -1395,148 +1363,6 @@ void CurrentOffsetCalc(){
   SERIALCONSOLE.print(settings.offset2);
   SERIALCONSOLE.print(" current offset 2 calibrated ");
   SERIALCONSOLE.println("  ");
-}
-
-void CAN_BMC_send(byte CAN_Nr) //BMC CAN Messages
-{
-  CAN_message_t MSG;
-  MSG.id  = 0x351;
-  MSG.len = 8;
-  if (storagemode){
-    MSG.buf[0] = lowByte(uint16_t((settings.StoreVsetpoint * settings.Scells ) * 10));
-    MSG.buf[1] = highByte(uint16_t((settings.StoreVsetpoint * settings.Scells ) * 10));    
-  }else{
-    MSG.buf[0] = lowByte(uint16_t((settings.ChargeVSetpoint * settings.Scells ) * 10));
-    MSG.buf[1] = highByte(uint16_t((settings.ChargeVSetpoint * settings.Scells ) * 10));
-  }
-  MSG.buf[2] = lowByte(chargecurrent);
-  MSG.buf[3] = highByte(chargecurrent);
-  MSG.buf[4] = lowByte(discurrent);
-  MSG.buf[5] = highByte(discurrent);
-  MSG.buf[6] = lowByte(uint16_t((settings.UnderVDerateSetpoint * settings.Scells) * 10));
-  MSG.buf[7] = highByte(uint16_t((settings.UnderVDerateSetpoint * settings.Scells) * 10));
-  if(CAN_Nr & 1){can1.write(MSG);}
-  if(CAN_Nr & 2){can2.write(MSG);}
-
-  MSG.id  = 0x355;
-  MSG.len = 8;
-  MSG.buf[0] = lowByte(SOC);
-  MSG.buf[1] = highByte(SOC);
-  MSG.buf[2] = lowByte(SOH_calc());
-  MSG.buf[3] = highByte(SOH_calc());
-  MSG.buf[4] = lowByte(SOC * 10);
-  MSG.buf[5] = highByte(SOC * 10);
-  MSG.buf[6] = 0;
-  MSG.buf[7] = 0;
-  if(CAN_Nr & 1){can1.write(MSG);}
-  if(CAN_Nr & 2){can2.write(MSG);}
-
-  MSG.id  = 0x356;
-  MSG.len = 8;
-  MSG.buf[0] = lowByte(uint16_t(bms.getPackVoltage() * 100));
-  MSG.buf[1] = highByte(uint16_t(bms.getPackVoltage() * 100));
-  MSG.buf[2] = lowByte(long(currentact / 100));
-  MSG.buf[3] = highByte(long(currentact / 100));
-  MSG.buf[4] = lowByte(int16_t(bms.getAvgTemperature() * 10));
-  MSG.buf[5] = highByte(int16_t(bms.getAvgTemperature() * 10));
-  MSG.buf[6] = 0;
-  MSG.buf[7] = 0;
-  if(CAN_Nr & 1){can1.write(MSG);}
-  if(CAN_Nr & 2){can2.write(MSG);}
-
-  delay(2);
-  MSG.id  = 0x35A;
-  MSG.len = 8;
-  MSG.buf[0] = alarm[0];// High temp  Low Voltage | High Voltage
-  MSG.buf[1] = alarm[1];// High Discharge Current | Low Temperature
-  MSG.buf[2] = alarm[2];// Internal Failure | High Charge current
-  MSG.buf[3] = alarm[3];// Cell Imbalance
-  MSG.buf[4] = warning[0];// High temp  Low Voltage | High Voltage
-  MSG.buf[5] = warning[1];// High Discharge Current | Low Temperature
-  MSG.buf[6] = warning[2];// Internal Failure | High Charge current
-  MSG.buf[7] = warning[3];// Cell Imbalance
-  if(CAN_Nr & 1){can1.write(MSG);}
-  if(CAN_Nr & 2){can2.write(MSG);}
-/*
-  msg.id  = 0x35E;
-  msg.len = 8;
-  msg.buf[0] = bmcname[0];
-  msg.buf[1] = bmcname[1];
-  msg.buf[2] = bmcname[2];
-  msg.buf[3] = bmcname[3];
-  msg.buf[4] = bmcname[4];
-  msg.buf[5] = bmcname[5];
-  msg.buf[6] = bmcname[6];
-  msg.buf[7] = bmcname[7];
-  can1.write(msg);
-
-  delay(2);
-  msg.id  = 0x370;
-  msg.len = 8;
-  msg.buf[0] = bmcmanu[0];
-  msg.buf[1] = bmcmanu[1];
-  msg.buf[2] = bmcmanu[2];
-  msg.buf[3] = bmcmanu[3];
-  msg.buf[4] = bmcmanu[4];
-  msg.buf[5] = bmcmanu[5];
-  msg.buf[6] = bmcmanu[6];
-  msg.buf[7] = bmcmanu[7];
-  can1.write(msg);
-*/
-  if (balancecells == 1){
-    MSG.id = 0x3c3;
-    MSG.len = 8;
-    if (bms.getLowCellVolt() < settings.balanceVoltage){
-      MSG.buf[0] = highByte(uint16_t(settings.balanceVoltage * 1000));
-      MSG.buf[1] = lowByte(uint16_t(settings.balanceVoltage * 1000));
-    }
-    else{
-      MSG.buf[0] = highByte(uint16_t(bms.getLowCellVolt() * 1000));
-      MSG.buf[1] = lowByte(uint16_t(bms.getLowCellVolt() * 1000));
-    }
-    MSG.buf[2] = 0x01;
-    MSG.buf[3] = 0x04;
-    MSG.buf[4] = 0x03;
-    MSG.buf[5] = 0x00;
-    MSG.buf[6] = 0x00;
-    MSG.buf[7] = 0x00;
-   if(CAN_Nr & 1){can1.write(MSG);}
-   if(CAN_Nr & 2){can2.write(MSG);}
-  }
-
- delay(2);
-  MSG.id  = 0x372;
-  MSG.len = 8;
-  MSG.buf[0] = lowByte(bms.getNumModules());
-  MSG.buf[1] = highByte(bms.getNumModules());
-  MSG.buf[2] = 0x00;
-  MSG.buf[3] = 0x00;
-  MSG.buf[4] = 0x00;
-  MSG.buf[5] = 0x00;
-  MSG.buf[6] = 0x00;
-  MSG.buf[7] = 0x00;
-  if(CAN_Nr & 1){can1.write(MSG);}
-  if(CAN_Nr & 2){can2.write(MSG);}
-
-  delay(2);
-  MSG.id  = 0x373;
-  MSG.len = 8;
-  MSG.buf[0] = lowByte(uint16_t(bms.getLowCellVolt() * 1000));
-  MSG.buf[1] = highByte(uint16_t(bms.getLowCellVolt() * 1000));
-  MSG.buf[2] = lowByte(uint16_t(bms.getHighCellVolt() * 1000));
-  MSG.buf[3] = highByte(uint16_t(bms.getHighCellVolt() * 1000));
-  MSG.buf[4] = lowByte(uint16_t(bms.getLowTemperature() + 273.15));
-  MSG.buf[5] = highByte(uint16_t(bms.getLowTemperature() + 273.15));
-  MSG.buf[6] = lowByte(uint16_t(bms.getHighTemperature() + 273.15));
-  MSG.buf[7] = highByte(uint16_t(bms.getHighTemperature() + 273.15));
-  if(CAN_Nr & 1){can1.write(MSG);}
-  if(CAN_Nr & 2){can2.write(MSG);}
-
-  delay(2);
-  MSG.id  = 0x379; //Installed capacity
-  MSG.len = 2;
-  MSG.buf[0] = lowByte(uint16_t(settings.Pstrings * settings.CAP));
-  MSG.buf[1] = highByte(uint16_t(settings.Pstrings * settings.CAP));
 }
 
 void Menu(){
@@ -1938,7 +1764,7 @@ void Menu(){
           SERIALCONSOLE.println(settings.gaugelow);
           SERIALCONSOLE.print("[24] PWM Gauge high [0-255]: ");
           SERIALCONSOLE.println(settings.gaugehigh);
-          SERIALCONSOLE.print("[25] Gauge Test [0-255] for 10s: ");
+          SERIALCONSOLE.print("[25] Gauge Test [0-255] for 30s: ");
           SERIALCONSOLE.println(debug_Gauge_val);
           SERIALCONSOLE.print("[d] Debug Output ");         
           if(debug_Output){ SERIALCONSOLE.println("ON"); } 
@@ -2013,9 +1839,29 @@ void Menu(){
           can1_reset();
           Menu(); 
         break;  
+        case 5:
+          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0] = menu_option_val;}
+          Menu(); 
+        break;
+        case 6:
+          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[1] = menu_option_val;}
+          Menu(); 
+        break;
+        case 7:
+          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[2] = menu_option_val;}
+          Menu(); 
+        break;
+        case 8:
+          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[3] = menu_option_val;}
+          Menu(); 
+        break;
+        case 9:
+          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[4] = menu_option_val;}
+          Menu(); 
+        break;
         case 111: CO_Send_SDO(0x26,2,0,0x1800,0x02,0); break; // "o" for SDO
         case 112: CO_SDO_send_test(0x26); break; // "p" for PDO
-        case 100: debug_CAN1 = !debug_CAN1; Menu(); break;    
+        case 100: debug_CAN1 = !debug_CAN1; debug_CAN2 = !debug_CAN2; Menu(); break;    
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
@@ -2036,7 +1882,7 @@ void Menu(){
           SERIALCONSOLE.print("[4] Can Baudrate in kbps: ");
           SERIALCONSOLE.println(settings.CAN2_Speed / 1000);
           SERIALCONSOLE.print("[d2] Debug CAN2: ");
-          if(debug_CAN1){ SERIALCONSOLE.println("ON"); } 
+          if(debug_CAN2){ SERIALCONSOLE.println("ON"); } 
           else {SERIALCONSOLE.println("OFF");}
           SERIALCONSOLE.println();
           SERIALCONSOLE.println("Functions:");
@@ -2333,6 +2179,181 @@ void Nextion_send(String var, String val){
   DisplaySerial.write(0xff);  
 }
 
+void can1_start(){
+  can1.begin();
+  can1.setBaudRate(settings.CAN1_Speed);
+}
+
+void can2_start(){
+  can2.begin();
+  can2.setBaudRate(settings.CAN2_Speed);
+}
+
+void can1_reset(){
+  can1.reset();
+};
+
+void can2_reset(){
+  can2.reset();
+};
+
+void CAN_read(){
+  CAN_message_t MSG;
+
+  while (can1.read(MSG)){
+    if (settings.cursens == Sen_Canbus && settings.CAN_Map[CAN_Curr_Sen] & 1){currentact =  CAN_SEN_read(MSG);}
+    if (settings.mctype && settings.CAN_Map[CAN_MC] & 1){CAN_MC_read(MSG);}
+    if (debug_CAN1){CAN_Debug_IN(MSG, 1);}
+  }
+  while (can2.read(MSG)){
+    if (settings.cursens == Sen_Canbus && settings.CAN_Map[CAN_Curr_Sen] & 2){currentact =  CAN_SEN_read(MSG);}
+    if (settings.mctype && settings.CAN_Map[CAN_MC] & 2){CAN_MC_read(MSG);}
+    if (debug_CAN2){CAN_Debug_IN(MSG, 2);}
+  }
+}
+
+void CAN_BMC_send(byte CAN_Nr) //BMC CAN Messages
+{
+  CAN_message_t MSG;
+  MSG.id  = 0x351;
+  MSG.len = 8;
+  if (storagemode){
+    MSG.buf[0] = lowByte(uint16_t((settings.StoreVsetpoint * settings.Scells ) * 10));
+    MSG.buf[1] = highByte(uint16_t((settings.StoreVsetpoint * settings.Scells ) * 10));    
+  }else{
+    MSG.buf[0] = lowByte(uint16_t((settings.ChargeVSetpoint * settings.Scells ) * 10));
+    MSG.buf[1] = highByte(uint16_t((settings.ChargeVSetpoint * settings.Scells ) * 10));
+  }
+  MSG.buf[2] = lowByte(chargecurrent);
+  MSG.buf[3] = highByte(chargecurrent);
+  MSG.buf[4] = lowByte(discurrent);
+  MSG.buf[5] = highByte(discurrent);
+  MSG.buf[6] = lowByte(uint16_t((settings.UnderVDerateSetpoint * settings.Scells) * 10));
+  MSG.buf[7] = highByte(uint16_t((settings.UnderVDerateSetpoint * settings.Scells) * 10));
+  if(CAN_Nr & 1){can1.write(MSG);}
+  if(CAN_Nr & 2){can2.write(MSG);}
+
+  MSG.id  = 0x355;
+  MSG.len = 8;
+  MSG.buf[0] = lowByte(SOC);
+  MSG.buf[1] = highByte(SOC);
+  MSG.buf[2] = lowByte(SOH_calc());
+  MSG.buf[3] = highByte(SOH_calc());
+  MSG.buf[4] = lowByte(SOC * 10);
+  MSG.buf[5] = highByte(SOC * 10);
+  MSG.buf[6] = 0;
+  MSG.buf[7] = 0;
+  if(CAN_Nr & 1){can1.write(MSG);}
+  if(CAN_Nr & 2){can2.write(MSG);}
+
+  MSG.id  = 0x356;
+  MSG.len = 8;
+  MSG.buf[0] = lowByte(uint16_t(bms.getPackVoltage() * 100));
+  MSG.buf[1] = highByte(uint16_t(bms.getPackVoltage() * 100));
+  MSG.buf[2] = lowByte(long(currentact / 100));
+  MSG.buf[3] = highByte(long(currentact / 100));
+  MSG.buf[4] = lowByte(int16_t(bms.getAvgTemperature() * 10));
+  MSG.buf[5] = highByte(int16_t(bms.getAvgTemperature() * 10));
+  MSG.buf[6] = 0;
+  MSG.buf[7] = 0;
+  if(CAN_Nr & 1){can1.write(MSG);}
+  if(CAN_Nr & 2){can2.write(MSG);}
+
+  delay(2);
+  MSG.id  = 0x35A;
+  MSG.len = 8;
+  MSG.buf[0] = alarm[0];// High temp  Low Voltage | High Voltage
+  MSG.buf[1] = alarm[1];// High Discharge Current | Low Temperature
+  MSG.buf[2] = alarm[2];// Internal Failure | High Charge current
+  MSG.buf[3] = alarm[3];// Cell Imbalance
+  MSG.buf[4] = warning[0];// High temp  Low Voltage | High Voltage
+  MSG.buf[5] = warning[1];// High Discharge Current | Low Temperature
+  MSG.buf[6] = warning[2];// Internal Failure | High Charge current
+  MSG.buf[7] = warning[3];// Cell Imbalance
+  if(CAN_Nr & 1){can1.write(MSG);}
+  if(CAN_Nr & 2){can2.write(MSG);}
+/*
+  msg.id  = 0x35E;
+  msg.len = 8;
+  msg.buf[0] = bmcname[0];
+  msg.buf[1] = bmcname[1];
+  msg.buf[2] = bmcname[2];
+  msg.buf[3] = bmcname[3];
+  msg.buf[4] = bmcname[4];
+  msg.buf[5] = bmcname[5];
+  msg.buf[6] = bmcname[6];
+  msg.buf[7] = bmcname[7];
+  can1.write(msg);
+
+  delay(2);
+  msg.id  = 0x370;
+  msg.len = 8;
+  msg.buf[0] = bmcmanu[0];
+  msg.buf[1] = bmcmanu[1];
+  msg.buf[2] = bmcmanu[2];
+  msg.buf[3] = bmcmanu[3];
+  msg.buf[4] = bmcmanu[4];
+  msg.buf[5] = bmcmanu[5];
+  msg.buf[6] = bmcmanu[6];
+  msg.buf[7] = bmcmanu[7];
+  can1.write(msg);
+*/
+  if (balancecells == 1){
+    MSG.id = 0x3c3;
+    MSG.len = 8;
+    if (bms.getLowCellVolt() < settings.balanceVoltage){
+      MSG.buf[0] = highByte(uint16_t(settings.balanceVoltage * 1000));
+      MSG.buf[1] = lowByte(uint16_t(settings.balanceVoltage * 1000));
+    }
+    else{
+      MSG.buf[0] = highByte(uint16_t(bms.getLowCellVolt() * 1000));
+      MSG.buf[1] = lowByte(uint16_t(bms.getLowCellVolt() * 1000));
+    }
+    MSG.buf[2] = 0x01;
+    MSG.buf[3] = 0x04;
+    MSG.buf[4] = 0x03;
+    MSG.buf[5] = 0x00;
+    MSG.buf[6] = 0x00;
+    MSG.buf[7] = 0x00;
+   if(CAN_Nr & 1){can1.write(MSG);}
+   if(CAN_Nr & 2){can2.write(MSG);}
+  }
+
+ delay(2);
+  MSG.id  = 0x372;
+  MSG.len = 8;
+  MSG.buf[0] = lowByte(bms.getNumModules());
+  MSG.buf[1] = highByte(bms.getNumModules());
+  MSG.buf[2] = 0x00;
+  MSG.buf[3] = 0x00;
+  MSG.buf[4] = 0x00;
+  MSG.buf[5] = 0x00;
+  MSG.buf[6] = 0x00;
+  MSG.buf[7] = 0x00;
+  if(CAN_Nr & 1){can1.write(MSG);}
+  if(CAN_Nr & 2){can2.write(MSG);}
+
+  delay(2);
+  MSG.id  = 0x373;
+  MSG.len = 8;
+  MSG.buf[0] = lowByte(uint16_t(bms.getLowCellVolt() * 1000));
+  MSG.buf[1] = highByte(uint16_t(bms.getLowCellVolt() * 1000));
+  MSG.buf[2] = lowByte(uint16_t(bms.getHighCellVolt() * 1000));
+  MSG.buf[3] = highByte(uint16_t(bms.getHighCellVolt() * 1000));
+  MSG.buf[4] = lowByte(uint16_t(bms.getLowTemperature() + 273.15));
+  MSG.buf[5] = highByte(uint16_t(bms.getLowTemperature() + 273.15));
+  MSG.buf[6] = lowByte(uint16_t(bms.getHighTemperature() + 273.15));
+  MSG.buf[7] = highByte(uint16_t(bms.getHighTemperature() + 273.15));
+  if(CAN_Nr & 1){can1.write(MSG);}
+  if(CAN_Nr & 2){can2.write(MSG);}
+
+  delay(2);
+  MSG.id  = 0x379; //Installed capacity
+  MSG.len = 2;
+  MSG.buf[0] = lowByte(uint16_t(settings.Pstrings * settings.CAP));
+  MSG.buf[1] = highByte(uint16_t(settings.Pstrings * settings.CAP));
+}
+
 void CAN_Charger_Send(byte CAN_Nr){
   CAN_message_t MSG;
   // CAN intervall [ToDo] Intervall for CAN2?
@@ -2461,21 +2482,6 @@ void CAN_Charger_Send(byte CAN_Nr){
     break;
   }
 }
-
-/*
-void SerialCanRecieve(){
-  if (can.recv(&SerialCANid, SerialCANdta)){
-    SERIALCONSOLE.print("GET DATA FROM ID: ");
-    SERIALCONSOLE.println(SerialCANid, HEX);
-    for (int i = 0; i < 8; i++){
-      SERIALCONSOLE.print("0x");
-      SERIALCONSOLE.print(SerialCANdta[i], HEX);
-      SERIALCONSOLE.print('\t');
-    }
-    SERIALCONSOLE.println();
-  }
-}
-*/
 
 void CAN_MC_read(CAN_message_t MSG){
   uint32_t tmp_id = 0;
