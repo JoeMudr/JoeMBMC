@@ -627,7 +627,7 @@ byte Vehicle_CondCheck(byte tmp_status){
   if (digitalRead(IN3_AC) == HIGH){
     //start charging when Voltage is below Charge Voltage - ChargeHyst.
     if (bms.getHighCellVolt() < (settings.ChargeVSetpoint - settings.ChargeHys)){ 
-      if (precharged){tmp_status = Stat_Charge;}
+      if (precharged || settings.ChargerDirect){tmp_status = Stat_Charge;}
       else {tmp_status = Stat_Precharge;}      
     }
     //Set 100% when Voltage gets above Charge Voltage 
