@@ -13,8 +13,6 @@ void SOC_charged();
 void CAP_recalc();
 void can1_start();
 void can2_start();
-void can1_reset();
-void can2_reset();
 void CAN_read();
 void CAN_MC_read(CAN_message_t MSG);
 void CAN_BMC_send(byte CAN_Nr);

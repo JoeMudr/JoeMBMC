@@ -148,20 +148,17 @@ float chargecurrentFactor = 0.0f; //correction factor, when using multiple charg
 uint16_t discurrent = 0;
 
 /*
-[0] High Temp (7), Low Voltage (5), High Voltage (3)
-[1] High Discharge Current, Low Temperature (1)
-[2] Internal Failure, High Charge current
-[3] Cell Imbalance (1), series Cells error (2)
+// SMA style Alarms & Warnings
+// even Bits --> Alarm / Warning raised
+// odd Bits --> Alarm / Warning cleared
+[0] (7/6) hight Temp.          (5/4) low Voltage           (3/2) high Voltage           (1/0) general Alarm
+[1] (7/6) high current         (5/4) low Temp. charge      (3/2) high Temp. charge      (1/0) low Temp.
+[2] (7/6) Internal Failure     (5/4) battery short circuit (3/2) contactor problem      (1/0) high current charge
+[3] (1/0) Cell Imbalance
 */
-unsigned char alarm[4] = {0, 0, 0, 0};
+unsigned char alarm[4],warning[4] = {0, 0, 0, 0};
+//unsigned char warning[4] = {0, 0, 0, 0};
 
-/*
-[0] High Temp (7), Low Voltage (5), High Voltage (3)
-[1] High Discharge Current, Low Temperature (1)
-[2] Internal Failure, High Charge current
-[3] Cell Imbalance (1)
-*/
-unsigned char warning[4] = {0, 0, 0, 0};
 
 unsigned long warning_timer = 0;
 
@@ -512,7 +509,7 @@ void loop(){
     else{ Gauge_update(); } //WDT tripped?!
     
     SOC_update();
-    //CAN_BMC_send(settings.CAN_Map[CAN_BMC]); // [ToDO] reactivate? 
+    CAN_BMC_send(settings.CAN_Map[CAN_BMC]); // [ToDO] reactivate? 
     
     Currentavg_Calc();
 
@@ -578,29 +575,32 @@ void Reset_Cause(uint32_t resetStatusReg) {
 
 void Alarm_Check(){
  ///warnings
-  for(byte i = 0; i<4; i++){warning[i] = 0;} //reset
+  for(byte i = 0; i<4; i++){warning[i] = 0b10101010;} // reset to all OK
 
-  if (bms.getHighCellVolt() > (settings.OverVSetpoint - settings.WarnOff)){ warning[0] |= 0x04;} //bit 3
+  if (bms.getHighCellVolt() > (settings.OverVSetpoint - settings.WarnOff)){ warning[0] ^= 0b00001100;}
   if (bms.getLowCellVolt() < (settings.UnderVSetpoint + settings.WarnOff)){
-    warning[0] |= 0x10; //bit 5
+    warning[0] ^= 0b00110000;
     if (!warning_timer){warning_timer = millis() + 10000;}
     if (millis() > warning_timer){CAP_recalc();warning_timer = 0;} // recalculate capacity when lowest cell is under warning setpoint; reset Timer to prevent EEPROM Kill
   } else {warning_timer = 0;}
 
-  if (bms.getHighTemperature() > (settings.OverTSetpoint - settings.WarnToff)){warning[0] |= 0x40;} //bit 7
-  if (bms.getLowTemperature() < (settings.UnderTSetpoint + settings.WarnToff)){warning[1] |= 0x01;} //bit 1
-  if (bms.seriescells() != settings.Scells * settings.Pstrings){warning[3] |= 0x02;} // bit 2
+  if (bms.getHighTemperature() > (settings.OverTSetpoint - settings.WarnToff)){warning[0] ^= 0b11000000;}
+  if (bms.getLowTemperature() < (settings.UnderTSetpoint + settings.WarnToff)){warning[1] ^= 0b00000011;}
+  if ((bms.getHighCellVolt() - bms.getLowCellVolt()) > settings.CellGap){warning[3] ^= 0b00000011;}
+  if (bms.seriescells() != settings.Scells * settings.Pstrings){warning[2] ^= 0b11000000;}
  
   //Errors
-  for(byte i = 0; i<4; i++){alarm[i] = 0;} //reset
+  for(byte i = 0; i<4; i++){alarm[i] = 0b10101010;} // reset to all OK
 
-  if (bms.getHighCellVolt() > settings.OverVSetpoint){alarm[0] |= 0x04;} //bit 3
-  if (bms.getLowCellVolt() < settings.UnderVSetpoint){alarm[0] |= 0x10;} //bit 5
-  if (bms.getHighTemperature() > settings.OverTSetpoint){alarm[0] |= 0x40;} //bit 7
-  if (bms.getLowTemperature() < settings.UnderTSetpoint){alarm[1] |= 0x01;} //bit 1
-  if ((bms.getHighCellVolt() - bms.getLowCellVolt()) > settings.CellGap){alarm[3] |= 0x01;} //bit 1
-  if (bms.seriescells() != settings.Scells * settings.Pstrings){alarm[3] |= 0x02;} // bit 2
+  if (bms.getHighCellVolt() > settings.OverVSetpoint){alarm[0] ^= 0b00001100;}
+  if (bms.getLowCellVolt() < settings.UnderVSetpoint){alarm[0] ^= 0b00110000;}
+  if (bms.getHighTemperature() > settings.OverTSetpoint){alarm[0] ^= 0b11000000;}
+  if (bms.getLowTemperature() < settings.UnderTSetpoint){alarm[1] ^= 0b00000011;}
+  if ((bms.getHighCellVolt() - bms.getLowCellVolt()) > settings.CellGap){alarm[3] ^= 0b00000011;}
+  if (bms.seriescells() != settings.Scells * settings.Pstrings){alarm[2] ^= 0b11000000;}
 }
+
+
 
 byte Vehicle_CondCheck(byte tmp_status){ 
   // [ToDo] Funktion läuft ohne Beschränkung in der Loop. BMS-Modul-Werte werden aber nur alle 0,5s geholt. 
@@ -621,7 +621,7 @@ byte Vehicle_CondCheck(byte tmp_status){
   } 
 
   // detect Undervoltage before Charging / let Charging override this Error
-  if (alarm[0] & 0x10) {tmp_status = Stat_Error;}
+  if (alarm[0] & 0b00010000) {tmp_status = Stat_Error;}
 
   //detect AC present & Check charging conditions
   if (digitalRead(IN3_AC) == HIGH){
@@ -644,9 +644,9 @@ byte Vehicle_CondCheck(byte tmp_status){
   }
 //SERIALCONSOLE.println(tmp_status);
   // Set Error depending on Error conditions, except Undervoltage to let Charging recover from Undervoltage
-  // Undertemp (alarm[1] & 0x01) is no Error in Drive & Charge (--> derate)
+  // Undertemp is no Error in Drive & Charge (--> derate)
   //[ToDO] Fix Tlow
-  if (alarm[0] & 0xEF || /*((alarm[1] & 0x01) && (tmp_status != Stat_Drive || tmp_status != Stat_Precharge || tmp_status != Stat_Charge)) ||*/ alarm[2]){tmp_status = Stat_Error;}
+  if (alarm[0] & 0b01010001 || /*((alarm[1] & 0x01) && (tmp_status != Stat_Drive || tmp_status != Stat_Precharge || tmp_status != Stat_Charge)) ||*/ alarm[3] & 0b00000010){tmp_status = Stat_Error;}
 //SERIALCONSOLE.println(tmp_status);
 
   // reset Error-Timer
@@ -669,7 +669,7 @@ byte ESS_CondCheck(byte tmp_status){
   }
 
   //Errors
-  if (alarm[0] || (alarm[1] & 0x01)  || alarm[2]){tmp_status = Stat_Error;}
+  if (alarm[0] & 0b01010101 || (alarm[1] & 0b00000001)  || alarm[2] & 0b01010100){tmp_status = Stat_Error;}
   if (tmp_status != Stat_Error){error_timer = 0;}
   return tmp_status;
 }
@@ -823,7 +823,9 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.print(discurrent / 10);
   SERIALCONSOLE.print("A");
   SERIALCONSOLE.println();
-  SERIALCONSOLE.print("Vlow: ");
+  SERIALCONSOLE.print("Vpack: ");
+  SERIALCONSOLE.print(bms.getPackVoltage());
+  SERIALCONSOLE.print("V| Vlow: ");
   SERIALCONSOLE.print(bms.getLowCellVolt());
   SERIALCONSOLE.print("V| Vhigh: ");
   SERIALCONSOLE.print(bms.getHighCellVolt());
@@ -878,17 +880,17 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.println();
   SERIALCONSOLE.print("Warning: ");
   for (byte i = 0; i < 4; i++){
-    SERIALCONSOLE.print(warning[i]);
+    SERIALCONSOLE.print(warning[i], BIN);
   }
   SERIALCONSOLE.println();
   SERIALCONSOLE.print("Error: ");
   for (byte i = 0; i < 4; i++){
-    SERIALCONSOLE.print(alarm[i]);
+    SERIALCONSOLE.print(alarm[i], BIN);
   }
   SERIALCONSOLE.println();  
-  if (alarm[3] & 0x02){
+  if (alarm[2] & 0xb01000000){
     SERIALCONSOLE.println("  ");
-    SERIALCONSOLE.print("   !!! Series Cells Fault !!!");
+    SERIALCONSOLE.print("   !!! Internal Error / Series Cells Fault !!!");
     SERIALCONSOLE.println("  ");
   }
 }
@@ -1310,7 +1312,9 @@ byte Gauge_update(){
     if (!debug_Gauge_timer){ debug_Gauge_timer = millis()+30000; }
     if (millis() < debug_Gauge_timer){ Gauge_PWM = debug_Gauge_val;}
     else {
-      debug_Gauge = debug_Gauge_val = debug_Gauge_timer = 0;
+      debug_Gauge = 0;
+      debug_Gauge_val = 0;
+      debug_Gauge_timer = 0;
       Menu(); //go back to the menu since we came from there
     }
   } else { 
@@ -1822,21 +1826,21 @@ void Menu(){
     case Menu_CAN:
       switch (menu_option){
         case 1: settings.CAN1_Interval = menu_option_val; 
-          can1_reset();
+          can1_start();
           Menu(); 
         break;
         case 2: 
           settings.CAN1_Speed = menu_option_val * 1000;
-          can1_reset();
+          can1_start();
           Menu(); 
         break;  
         case 3: settings.CAN2_Interval = menu_option_val; 
-          can1_reset();
+          can2_start();
           Menu(); 
         break;
         case 4: 
           settings.CAN2_Speed = menu_option_val * 1000;
-          can1_reset();
+          can2_start();
           Menu(); 
         break;  
         case 5:
@@ -1872,16 +1876,14 @@ void Menu(){
           SERIALCONSOLE.println(settings.CAN1_Interval);
           SERIALCONSOLE.print("[2] Can Baudrate in kbps: ");
           SERIALCONSOLE.println(settings.CAN1_Speed / 1000);
-          SERIALCONSOLE.print("[d1] Debug CAN1: ");
-          if(debug_CAN1){ SERIALCONSOLE.println("ON"); } 
-          else {SERIALCONSOLE.println("OFF");}
           SERIALCONSOLE.println();
           SERIALCONSOLE.println("CAN2:");
           SERIALCONSOLE.print("[3] CAN Msg Speed in ms: ");
           SERIALCONSOLE.println(settings.CAN2_Interval);
           SERIALCONSOLE.print("[4] Can Baudrate in kbps: ");
           SERIALCONSOLE.println(settings.CAN2_Speed / 1000);
-          SERIALCONSOLE.print("[d2] Debug CAN2: ");
+          SERIALCONSOLE.println();
+          SERIALCONSOLE.print("[d] Debug CAN1&2: ");
           if(debug_CAN2){ SERIALCONSOLE.println("ON"); } 
           else {SERIALCONSOLE.println("OFF");}
           SERIALCONSOLE.println();
@@ -2189,14 +2191,6 @@ void can2_start(){
   can2.setBaudRate(settings.CAN2_Speed);
 }
 
-void can1_reset(){
-  can1.reset();
-};
-
-void can2_reset(){
-  can2.reset();
-};
-
 void CAN_read(){
   CAN_message_t MSG;
 
@@ -2259,45 +2253,52 @@ void CAN_BMC_send(byte CAN_Nr) //BMC CAN Messages
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
 
+  //[ToDo] Pylontech Errors & Warnings
+  //MSG.id = 0x359
+
+  //SMA Alarms & Warnings
   delay(2);
   MSG.id  = 0x35A;
   MSG.len = 8;
-  MSG.buf[0] = alarm[0];// High temp  Low Voltage | High Voltage
-  MSG.buf[1] = alarm[1];// High Discharge Current | Low Temperature
-  MSG.buf[2] = alarm[2];// Internal Failure | High Charge current
-  MSG.buf[3] = alarm[3];// Cell Imbalance
-  MSG.buf[4] = warning[0];// High temp  Low Voltage | High Voltage
-  MSG.buf[5] = warning[1];// High Discharge Current | Low Temperature
-  MSG.buf[6] = warning[2];// Internal Failure | High Charge current
-  MSG.buf[7] = warning[3];// Cell Imbalance
+  MSG.buf[0] = alarm[0];
+  MSG.buf[1] = alarm[1];
+  MSG.buf[2] = alarm[2];
+  MSG.buf[3] = alarm[3];
+  MSG.buf[4] = warning[0];
+  MSG.buf[5] = warning[1];
+  MSG.buf[6] = warning[2];
+  MSG.buf[7] = warning[3];
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
-/*
-  msg.id  = 0x35E;
-  msg.len = 8;
-  msg.buf[0] = bmcname[0];
-  msg.buf[1] = bmcname[1];
-  msg.buf[2] = bmcname[2];
-  msg.buf[3] = bmcname[3];
-  msg.buf[4] = bmcname[4];
-  msg.buf[5] = bmcname[5];
-  msg.buf[6] = bmcname[6];
-  msg.buf[7] = bmcname[7];
-  can1.write(msg);
+
+  MSG.id  = 0x35E;
+  MSG.len = 8;
+  MSG.buf[0] = bmcname[0];
+  MSG.buf[1] = bmcname[1];
+  MSG.buf[2] = bmcname[2];
+  MSG.buf[3] = bmcname[3];
+  MSG.buf[4] = bmcname[4];
+  MSG.buf[5] = bmcname[5];
+  MSG.buf[6] = bmcname[6];
+  MSG.buf[7] = bmcname[7];
+  if(CAN_Nr & 1){can1.write(MSG);}
+  if(CAN_Nr & 2){can2.write(MSG);}
 
   delay(2);
-  msg.id  = 0x370;
-  msg.len = 8;
-  msg.buf[0] = bmcmanu[0];
-  msg.buf[1] = bmcmanu[1];
-  msg.buf[2] = bmcmanu[2];
-  msg.buf[3] = bmcmanu[3];
-  msg.buf[4] = bmcmanu[4];
-  msg.buf[5] = bmcmanu[5];
-  msg.buf[6] = bmcmanu[6];
-  msg.buf[7] = bmcmanu[7];
-  can1.write(msg);
-*/
+  MSG.id  = 0x370;
+  MSG.len = 8;
+  MSG.buf[0] = bmcmanu[0];
+  MSG.buf[1] = bmcmanu[1];
+  MSG.buf[2] = bmcmanu[2];
+  MSG.buf[3] = bmcmanu[3];
+  MSG.buf[4] = bmcmanu[4];
+  MSG.buf[5] = bmcmanu[5];
+  MSG.buf[6] = bmcmanu[6];
+  MSG.buf[7] = bmcmanu[7];
+  if(CAN_Nr & 1){can1.write(MSG);}
+  if(CAN_Nr & 2){can2.write(MSG);}
+
+/* [ToDo] what for?
   if (balancecells == 1){
     MSG.id = 0x3c3;
     MSG.len = 8;
@@ -2318,7 +2319,7 @@ void CAN_BMC_send(byte CAN_Nr) //BMC CAN Messages
    if(CAN_Nr & 1){can1.write(MSG);}
    if(CAN_Nr & 2){can2.write(MSG);}
   }
-
+*/
  delay(2);
   MSG.id  = 0x372;
   MSG.len = 8;
@@ -2352,6 +2353,14 @@ void CAN_BMC_send(byte CAN_Nr) //BMC CAN Messages
   MSG.len = 2;
   MSG.buf[0] = lowByte(uint16_t(settings.Pstrings * settings.CAP));
   MSG.buf[1] = highByte(uint16_t(settings.Pstrings * settings.CAP));
+  MSG.buf[2] = 0x00;
+  MSG.buf[3] = 0x00;
+  MSG.buf[4] = 0x00;
+  MSG.buf[5] = 0x00;
+  MSG.buf[6] = 0x00;
+  MSG.buf[7] = 0x00;
+  if(CAN_Nr & 1){can1.write(MSG);}
+  if(CAN_Nr & 2){can2.write(MSG);}
 }
 
 void CAN_Charger_Send(byte CAN_Nr){
