@@ -43,7 +43,7 @@
 */
 
 /////Version Identifier/////////
-int firmver = 231218;
+int firmver = 240102;
 
 BMSModuleManager bms;
 EEPROMSettings settings;
@@ -509,7 +509,7 @@ void loop(){
     else{ Gauge_update(); } //WDT tripped?!
     
     SOC_update();
-    CAN_BMC_send(settings.CAN_Map[CAN_BMC]); // [ToDO] reactivate? 
+    CAN_BMC_send(settings.CAN_Map[CAN_BMC]);
     
     Currentavg_Calc();
 
@@ -878,17 +878,17 @@ void SERIALCONSOLEprint(){
   String eta = String(ETA() / 60) + "h " + String(ETA() % 60) + "m";
   SERIALCONSOLE.println(eta);
   SERIALCONSOLE.println();
-  SERIALCONSOLE.print("Warning: ");
+  SERIALCONSOLE.println("Warning: ");
   for (byte i = 0; i < 4; i++){
-    SERIALCONSOLE.print(warning[i], BIN);
+    SERIALCONSOLE.println(warning[i], BIN);
   }
   SERIALCONSOLE.println();
-  SERIALCONSOLE.print("Error: ");
+  SERIALCONSOLE.println("Error: ");
   for (byte i = 0; i < 4; i++){
-    SERIALCONSOLE.print(alarm[i], BIN);
+    SERIALCONSOLE.println(alarm[i], BIN);
   }
   SERIALCONSOLE.println();  
-  if (alarm[2] & 0xb01000000){
+  if (alarm[2] & 0b01000000){
     SERIALCONSOLE.println("  ");
     SERIALCONSOLE.print("   !!! Internal Error / Series Cells Fault !!!");
     SERIALCONSOLE.println("  ");
