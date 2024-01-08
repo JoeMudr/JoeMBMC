@@ -336,7 +336,6 @@ void loadSettings(){
   settings.cursens = Sen_Canbus;
   settings.voltsoc = 0; //SOC purely voltage based
   settings.Pretime = 5000; //ms of precharge time
-  settings.conthold = 50; //holding duty cycle for contactor 0-255
   settings.Precurrent = 1000; //ma before closing main contator
   settings.convhigh = 312; // mV/A current sensor high range channel
   settings.convlow = 1250; // mV/A current sensor low range channel
@@ -717,7 +716,7 @@ void set_BMC_Status(byte status){
       set_OUT_States(Out_Charge); // enable charger
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on
       Balancing();
-      CAN_Charger_Send(settings.CAN_Map[CAN_Charger]);
+      CAN_Charger_Send(settings.CAN_Map[0][CAN_Charger]);
       ChargeCurrentLimit();
       Warn_handle();
     break;
@@ -1707,10 +1706,9 @@ void Menu(){
         case 12: set_OUT_Mapping(8,get_OUT_Mapping(8,0),menu_option_val); Menu(); break;
         case 20: settings.Pretime = menu_option_val; Menu(); break;
         case 21: settings.Precurrent = menu_option_val; Menu(); break;
-        case 22: settings.conthold = menu_option_val; Menu(); break;
-        case 23: settings.gaugelow = menu_option_val; Menu(); break;
-        case 24: settings.gaugehigh = menu_option_val; Menu(); break;
-        case 25:
+        case 22: settings.gaugelow = menu_option_val; Menu(); break;
+        case 23: settings.gaugehigh = menu_option_val; Menu(); break;
+        case 24:
           debug_Gauge_val = menu_option_val;
           debug_Gauge = 1;
           Menu();
@@ -1755,13 +1753,11 @@ void Menu(){
           SERIALCONSOLE.println(settings.Pretime);
           SERIALCONSOLE.print("[21] Precharge finish Current in mA: ");
           SERIALCONSOLE.println(settings.Precurrent);
-          SERIALCONSOLE.print("[22] PWM Contactor hold [0-255]: ");
-          SERIALCONSOLE.println(settings.conthold);
-          SERIALCONSOLE.print("[23] PWM Gauge low [0-255]: ");
+          SERIALCONSOLE.print("[22] PWM Gauge low [0-255]: ");
           SERIALCONSOLE.println(settings.gaugelow);
-          SERIALCONSOLE.print("[24] PWM Gauge high [0-255]: ");
+          SERIALCONSOLE.print("[23] PWM Gauge high [0-255]: ");
           SERIALCONSOLE.println(settings.gaugehigh);
-          SERIALCONSOLE.print("[25] Gauge Test [0-255] for 30s: ");
+          SERIALCONSOLE.print("[24] Gauge Test [0-255] for 30s: ");
           SERIALCONSOLE.println(debug_Gauge_val);
           SERIALCONSOLE.print("[d] Debug Output ");         
           if(debug_Output){ SERIALCONSOLE.println("ON"); } 
@@ -1818,29 +1814,21 @@ void Menu(){
     break;  
     case Menu_CAN:
       switch (menu_option){
-        case 1: settings.CAN1_Interval = menu_option_val; 
-          can1_start();
-          Menu(); 
-        break;
-        case 2: 
+        case 1: 
           settings.CAN1_Speed = menu_option_val * 1000;
           can1_start();
           Menu(); 
         break;  
-        case 3: settings.CAN2_Interval = menu_option_val; 
-          can2_start();
-          Menu(); 
-        break;
-        case 4: 
+        case 2: 
           settings.CAN2_Speed = menu_option_val * 1000;
           can2_start();
           Menu(); 
         break;  
-        case 5:
+        case 3:
           if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][0] = menu_option_val;}
           Menu(); 
         break;
-        case 6:
+        case 5:
           if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][1] = menu_option_val;}
           Menu(); 
         break;
@@ -1848,11 +1836,11 @@ void Menu(){
           if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][2] = menu_option_val;}
           Menu(); 
         break;
-        case 8:
+        case 9:
           if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][3] = menu_option_val;}
           Menu(); 
         break;
-        case 9:
+        case 11:
           if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][4] = menu_option_val;}
           Menu(); 
         break;
@@ -1865,15 +1853,11 @@ void Menu(){
           SERIALCONSOLE.println("CAN-Bus settings");
           SERIALCONSOLE.println("--------------------");
           SERIALCONSOLE.println("CAN1:");
-          SERIALCONSOLE.print("[1] CAN Msg Speed in ms: ");
-          SERIALCONSOLE.println(settings.CAN1_Interval);
-          SERIALCONSOLE.print("[2] Can Baudrate in kbps: ");
+          SERIALCONSOLE.print("[1] Can Baudrate in kbps: ");
           SERIALCONSOLE.println(settings.CAN1_Speed / 1000);
           SERIALCONSOLE.println();
           SERIALCONSOLE.println("CAN2:");
-          SERIALCONSOLE.print("[3] CAN Msg Speed in ms: ");
-          SERIALCONSOLE.println(settings.CAN2_Interval);
-          SERIALCONSOLE.print("[4] Can Baudrate in kbps: ");
+          SERIALCONSOLE.print("[2] Can Baudrate in kbps: ");
           SERIALCONSOLE.println(settings.CAN2_Speed / 1000);
           SERIALCONSOLE.println();
           SERIALCONSOLE.print("[d] Debug CAN1&2: ");
@@ -1881,10 +1865,8 @@ void Menu(){
           else {SERIALCONSOLE.println("OFF");}
           SERIALCONSOLE.println();
           SERIALCONSOLE.println("Functions:");
-          for (size_t i = 0; i < 5; i++){
-            SERIALCONSOLE.print("[");
-            SERIALCONSOLE.print(5+i);
-            SERIALCONSOLE.print("] ");
+          for (byte i = 0; i < 5; i++){
+            SERIALCONSOLE.print("["+String((i+3)*2-3)+"] ");
             switch (i){
               case 0: SERIALCONSOLE.print("BMC Data Output: "); break;
               case 1: SERIALCONSOLE.print("BMS: "); break;
@@ -1897,6 +1879,11 @@ void Menu(){
               case 1: SERIALCONSOLE.println("CAN1"); break;
               case 2: SERIALCONSOLE.println("CAN2"); break;
               case 3: SERIALCONSOLE.println("CAN1 & CAN2"); break;
+            }
+            if (i < 3){
+              SERIALCONSOLE.print("["+String((i+3)*2-2)+"] ");
+              SERIALCONSOLE.print(settings.CAN_Map[1][i]);
+              SERIALCONSOLE.println("ms");
             }
           }
           
