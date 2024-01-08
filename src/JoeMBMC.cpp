@@ -675,13 +675,13 @@ byte ESS_CondCheck(byte tmp_status){
 }
 
 byte Warn_handle(){
-  if (warning[0] || warning[1] || warning[2] || warning[3]){
+  if (warning[0] & 0b01010101 || warning[1] & 0b01010101 || warning[2] & 0b01010101 || warning[3] & 0b01010101){
     set_OUT_States(Out_Err_Warn);
     set_OUT_States(Out_Warning);
-    if(warning[0] & 0x40){ // high temp -> activate cooling
+    if(warning[0] & 0b01000000){ // high temp -> activate cooling
       set_OUT_States(Out_Cooling);
     }
-    if(warning[1] & 0x01){ // low temp -> activate heating
+    if(warning[1] & 0b00000001){ // low temp -> activate heating
       set_OUT_States(Out_Heating);
     }
     return 1;
