@@ -292,8 +292,6 @@ bool debug_Cur = 0;
 bool debug_CSV = 0;
 int debug_Digits = 2; //amount of digits behind decimal for voltage reading
 
-bool balancecells = 0;
-
 ADC *adc = new ADC(); // adc object
 
 IntervalTimer Timer_mAmpSec;
@@ -500,7 +498,6 @@ void loop(){
     interrupts();
 
     bms.getAllVoltTemp(); //has to be looped to get all values from modules
-    Balancing();
 
     if (!menu_load){ SERIALCONSOLEprint(); OUT_Debug();} //"debug" output on serial console
     if (debug_CSV){ bms.printAllCSV(millis(), currentact, SOC); }
@@ -693,12 +690,12 @@ void set_BMC_Status(byte status){
   switch (status){
     case Stat_Boot:  //[ToDO] unnötig? Ändern in Wartungsmodus?
       set_OUT_States(); // all off
-      balancecells = 0;
+      Balancing(0);
     break;
     case Stat_Ready:
       precharged = 0;
       set_OUT_States(); // all off
-      BalanceCells_Check();
+      Balancing();
       Warn_handle();
     break;
     case Stat_Drive:
@@ -706,14 +703,14 @@ void set_BMC_Status(byte status){
       set_OUT_States(Out_Cont_Pos);
       set_OUT_States(Out_Cont_Neg);
       set_OUT_States(Out_Gauge);
-      balancecells = 0;
       DischargeCurrentLimit();
       Warn_handle();
+      Balancing(0);
     break;
     case Stat_Precharge:
       set_OUT_States(); // all off
       Prechargecon();
-      balancecells = 0;
+      Balancing(0);
     break;    
     case Stat_Charge:
       set_OUT_States(); // all off
@@ -721,7 +718,7 @@ void set_BMC_Status(byte status){
       if (Settings_unsaved){EEPROM.put(0, settings); Settings_unsaved = 0; SERIALCONSOLE.println("--Saved--");}
       set_OUT_States(Out_Charge); // enable charger
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on
-      BalanceCells_Check();
+      Balancing();
       CAN_Charger_Send(settings.CAN_Map[CAN_Charger]);
       ChargeCurrentLimit();
       Warn_handle();
@@ -729,7 +726,7 @@ void set_BMC_Status(byte status){
     case Stat_Charged:
       set_OUT_States(); // all off
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
-      BalanceCells_Check();
+      Balancing();
       chargecurrentlast = 0;
       Warn_handle();
     break;
@@ -740,9 +737,9 @@ void set_BMC_Status(byte status){
         set_OUT_States(Out_Error);
         set_OUT_States(Out_Err_Warn);
         if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
+        Balancing(0);
         discurrent = 0;
         chargecurrent = 0;
-        balancecells = 0;
       }
     break;
     case Stat_Healthy:
@@ -751,7 +748,7 @@ void set_BMC_Status(byte status){
       set_OUT_States(Out_Cont_Pos);
       set_OUT_States(Out_Cont_Neg);
       set_OUT_States(Out_Gauge);
-      BalanceCells_Check();
+      Balancing();
       DischargeCurrentLimit();
       ChargeCurrentLimit();
       Warn_handle();
@@ -769,16 +766,14 @@ void BMS_revive(){
   if(millis() > 2000){digitalWrite(led, HIGH);}
 }
 
-void BalanceCells_Check(){
-  if (bms.getHighCellVolt() > settings.balanceVoltage && bms.getHighCellVolt() > bms.getLowCellVolt() + settings.balanceHyst)
-    {balancecells = 1;}
-  else
-    {balancecells = 0;}
-}
-
-void Balancing(){
-  if (balancecells){bms.balanceCells(settings.balanceDuty, settings.balanceHyst, 0);}
-  else{bms.StopBalancing();}
+byte Balancing(byte active){
+  if (bms.getHighCellVolt() > settings.balanceVoltage && bms.getHighCellVolt() > bms.getLowCellVolt() + settings.balanceHyst && active){
+    bms.balanceCells(settings.balanceDuty, settings.balanceHyst, 0);
+    return 1;
+  } else {
+    bms.StopBalancing();
+    return 0;
+  }
 }
 
 void SERIALCONSOLEprint(){
@@ -806,7 +801,7 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.print(settings.Scells*settings.Pstrings);
   if (digitalRead(IN3_AC) == HIGH){ SERIALCONSOLE.print(" | AC Present"); }
   if (digitalRead(IN1_Key) == HIGH){ SERIALCONSOLE.print(" | Key ON"); }
-  if (balancecells){ SERIALCONSOLE.print(" | Balancing Active"); }
+  if (Balancing()){ SERIALCONSOLE.print(" | Balancing Active"); }
   SERIALCONSOLE.println();
   SERIALCONSOLE.print("In:");
   SERIALCONSOLE.print(digitalRead(IN1_Key));

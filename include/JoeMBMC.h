@@ -4,8 +4,7 @@
 void Reset_Cause(uint32_t resetStatusReg);
 void mAmpsec_calc();
 void Alarm_Check();
-void BalanceCells_Check();
-void Balancing();
+byte Balancing(byte active = 1);
 void BMS_revive();
 byte Vehicle_CondCheck(byte tmp_status);
 byte ESS_CondCheck(byte tmp_status);
