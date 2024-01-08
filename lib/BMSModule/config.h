@@ -103,5 +103,5 @@ typedef struct {
   uint32_t CAN2_Speed;
   uint16_t CAN1_Interval;
   uint16_t CAN2_Interval;
-  byte CAN_Map[5]; // index: 0 = BMC-Output; 1 = BMS Communication; 2 = Chargers; 3 = Current Sensors; 4 = MotorController // Values: 0 = not set; 1 = Can1; 2 = Can2; 3 = Can1 & Can2
+  byte CAN_Map[2][5]; // index[0]: 0 = BMC-Output; 1 = BMS Communication; 2 = Chargers; 3 = Current Sensors; 4 = MotorController // Values: 0 = not set; 1 = Can1; 2 = Can2; 3 = Can1 & Can2
 } EEPROMSettings;

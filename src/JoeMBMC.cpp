@@ -43,7 +43,7 @@
 */
 
 /////Version Identifier/////////
-int firmver = 240102;
+int firmver = 240108;
 
 BMSModuleManager bms;
 EEPROMSettings settings;
@@ -157,8 +157,6 @@ uint16_t discurrent = 0;
 [3] (1/0) Cell Imbalance
 */
 unsigned char alarm[4],warning[4] = {0, 0, 0, 0};
-//unsigned char warning[4] = {0, 0, 0, 0};
-
 
 unsigned long warning_timer = 0;
 
@@ -375,7 +373,8 @@ void loadSettings(){
   settings.CAN1_Speed = 500000;
   settings.CAN2_Speed = 500000;
   for (size_t i = 0; i < 5; i++){
-  settings.CAN_Map[i] = 0;
+  settings.CAN_Map[0][i] = 0;
+  settings.CAN_Map[1][i] = 0;
   }
 }
 
@@ -505,7 +504,7 @@ void loop(){
     else{ Gauge_update(); } //WDT tripped?!
     
     SOC_update();
-    CAN_BMC_send(settings.CAN_Map[CAN_BMC]);
+    CAN_BMC_send(settings.CAN_Map[0][CAN_BMC]);
     
     Currentavg_Calc();
 
@@ -1838,23 +1837,23 @@ void Menu(){
           Menu(); 
         break;  
         case 5:
-          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0] = menu_option_val;}
+          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][0] = menu_option_val;}
           Menu(); 
         break;
         case 6:
-          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[1] = menu_option_val;}
+          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][1] = menu_option_val;}
           Menu(); 
         break;
         case 7:
-          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[2] = menu_option_val;}
+          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][2] = menu_option_val;}
           Menu(); 
         break;
         case 8:
-          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[3] = menu_option_val;}
+          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][3] = menu_option_val;}
           Menu(); 
         break;
         case 9:
-          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[4] = menu_option_val;}
+          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][4] = menu_option_val;}
           Menu(); 
         break;
         case 111: CO_Send_SDO(0x26,2,0,0x1800,0x02,0); break; // "o" for SDO
@@ -1893,7 +1892,7 @@ void Menu(){
               case 3: SERIALCONSOLE.print("Current Sensor: "); break;
               case 4: SERIALCONSOLE.print("Motor Controller: "); break;
             }
-            switch (settings.CAN_Map[i]){
+            switch (settings.CAN_Map[0][i]){
               case 0: SERIALCONSOLE.println("not set"); break;
               case 1: SERIALCONSOLE.println("CAN1"); break;
               case 2: SERIALCONSOLE.println("CAN2"); break;
@@ -2189,13 +2188,13 @@ void CAN_read(){
   CAN_message_t MSG;
 
   while (can1.read(MSG)){
-    if (settings.cursens == Sen_Canbus && settings.CAN_Map[CAN_Curr_Sen] & 1){currentact =  CAN_SEN_read(MSG);}
-    if (settings.mctype && settings.CAN_Map[CAN_MC] & 1){CAN_MC_read(MSG);}
+    if (settings.cursens == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 1){currentact =  CAN_SEN_read(MSG);}
+    if (settings.mctype && settings.CAN_Map[0][CAN_MC] & 1){CAN_MC_read(MSG);}
     if (debug_CAN1){CAN_Debug_IN(MSG, 1);}
   }
   while (can2.read(MSG)){
-    if (settings.cursens == Sen_Canbus && settings.CAN_Map[CAN_Curr_Sen] & 2){currentact =  CAN_SEN_read(MSG);}
-    if (settings.mctype && settings.CAN_Map[CAN_MC] & 2){CAN_MC_read(MSG);}
+    if (settings.cursens == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 2){currentact =  CAN_SEN_read(MSG);}
+    if (settings.mctype && settings.CAN_Map[0][CAN_MC] & 2){CAN_MC_read(MSG);}
     if (debug_CAN2){CAN_Debug_IN(MSG, 2);}
   }
 }
