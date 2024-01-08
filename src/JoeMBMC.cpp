@@ -1162,7 +1162,7 @@ float CAP_Temp_alteration(){
   if (bms.getLowTemperature() < float(settings.Temp_Cap_Map[0][0])){ 
     return settings.Temp_Cap_Map[1][0] / 100;
   }
-  //temp above highest setpoint. Assumes it's 100%?
+  //temp above highest setpoint.
   if(bms.getLowTemperature() >= float(settings.Temp_Cap_Map[0][4])) {
     return float(settings.Temp_Cap_Map[1][4]) / 100;
   }
