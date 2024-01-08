@@ -166,7 +166,6 @@ unsigned char bmcname[8] = {'J', 'O', 'E', 'M', ' ', 'B', 'M', 'C'};
 unsigned char bmcmanu[8] = {'J', 'O', 'E', 'M', ' ', 'T', 'E', 'C'};
 
 signed long ISAVoltage1, ISAVoltage2, ISAVoltage3 = 0; //mV only with ISAscale sensor
-byte Cellsbalancing[MAX_MODULE_ADDR+1];
 
 //variables for current/capacity calulation
 uint16_t Sen_AnalogueRawValue;
