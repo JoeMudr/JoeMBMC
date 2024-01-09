@@ -1,9 +1,9 @@
 #include <config.h>
-#include "BMSModule.h"
+#include "Tesla_BMSModule.h"
 #include "BMSUtil.h"
 
 
-BMSModule::BMSModule()
+Tesla_BMSModule::Tesla_BMSModule()
 {
   for (int i = 0; i < 6; i++)
   {
@@ -23,7 +23,7 @@ BMSModule::BMSModule()
 }
 
 //[ToDo] WTF why?
-void BMSModule::clearmodule()
+void Tesla_BMSModule::clearmodule()
 {
   for (int i = 0; i < 6; i++)
   {
@@ -37,7 +37,7 @@ void BMSModule::clearmodule()
 /*
   Reading the status of the board to identify any flags, will be more useful when implementing a sleep cycle
 */
-void BMSModule::readStatus()
+void Tesla_BMSModule::readStatus()
 {
   uint8_t payload[3];
   uint8_t buff[8];
@@ -80,22 +80,22 @@ void BMSModule::readStatus()
   */
 }
 
-uint8_t BMSModule::getFaults()
+uint8_t Tesla_BMSModule::getFaults()
 {
   return faults;
 }
 
-uint8_t BMSModule::getAlerts()
+uint8_t Tesla_BMSModule::getAlerts()
 {
   return alerts;
 }
 
-uint8_t BMSModule::getCOVCells()
+uint8_t Tesla_BMSModule::getCOVCells()
 {
   return COVFaults;
 }
 
-uint8_t BMSModule::getCUVCells()
+uint8_t Tesla_BMSModule::getCUVCells()
 {
   return CUVFaults;
 }
@@ -121,7 +121,7 @@ uint8_t BMSModule::getCUVCells()
   Tset = 35 + (5 * (buff[9] >> 4));
   } */
 
-void BMSModule::stopBalance()
+void Tesla_BMSModule::stopBalance()
 {
   uint8_t buff[8];
   uint8_t payload[4];
@@ -132,7 +132,7 @@ void BMSModule::stopBalance()
   delay(2);
 }
 
-bool BMSModule::readModuleValues()
+bool Tesla_BMSModule::readModuleValues()
 {
   uint8_t payload[4];
   uint8_t buff[50];
@@ -229,27 +229,27 @@ bool BMSModule::readModuleValues()
   return retVal;
 }
 
-float BMSModule::getCellVoltage(int cell)
+float Tesla_BMSModule::getCellVoltage(int cell)
 {
   if (cell < 0 || cell > 5) return 0.0f;
   return cellVolt[cell];
 }
 
-float BMSModule::getLowCellV()
+float Tesla_BMSModule::getLowCellV()
 {
   float lowVal = 10.0f;
   for (int i = 0; i < 6; i++) if (cellVolt[i] < lowVal && cellVolt[i] > IgnoreCell) lowVal = cellVolt[i];
   return lowVal;
 }
 
-float BMSModule::getHighCellV()
+float Tesla_BMSModule::getHighCellV()
 {
   float hiVal = 0.0f;
   for (int i = 0; i < 6; i++) if (cellVolt[i] > hiVal) hiVal = cellVolt[i];
   return hiVal;
 }
 
-float BMSModule::getAverageV()
+float Tesla_BMSModule::getAverageV()
 {
   int x = 0;
   float avgVal = 0.0f;
@@ -265,7 +265,7 @@ float BMSModule::getAverageV()
   return avgVal;
 }
 
-int BMSModule::getscells(){
+int Tesla_BMSModule::getscells(){
   scells = 0;
   for (int i = 0; i < 6; i++){
     if (cellVolt[i] > IgnoreCell && cellVolt[i] < 60.0){scells++;}
@@ -273,39 +273,39 @@ int BMSModule::getscells(){
   return scells;
 }
 
-float BMSModule::getHighestModuleVolt()
+float Tesla_BMSModule::getHighestModuleVolt()
 {
   return highestModuleVolt;
 }
 
-float BMSModule::getLowestModuleVolt()
+float Tesla_BMSModule::getLowestModuleVolt()
 {
   return lowestModuleVolt;
 }
 
-float BMSModule::getHighestCellVolt(int cell)
+float Tesla_BMSModule::getHighestCellVolt(int cell)
 {
   if (cell < 0 || cell > 5) return 0.0f;
   return highestCellVolt[cell];
 }
 
-float BMSModule::getLowestCellVolt(int cell)
+float Tesla_BMSModule::getLowestCellVolt(int cell)
 {
   if (cell < 0 || cell > 5) return 0.0f;
   return lowestCellVolt[cell];
 }
 
-float BMSModule::getHighestTemp()
+float Tesla_BMSModule::getHighestTemp()
 {
   return highestTemperature;
 }
 
-float BMSModule::getLowestTemp()
+float Tesla_BMSModule::getLowestTemp()
 {
   return lowestTemperature;
 }
 
-float BMSModule::getLowTemp()
+float Tesla_BMSModule::getLowTemp()
 {
   if (sensor == 0)
   {
@@ -317,7 +317,7 @@ float BMSModule::getLowTemp()
   }
 }
 
-float BMSModule::getHighTemp()
+float Tesla_BMSModule::getHighTemp()
 {
   if (sensor == 0)
   {
@@ -330,7 +330,7 @@ float BMSModule::getHighTemp()
 
 }
 
-float BMSModule::getAvgTemp()
+float Tesla_BMSModule::getAvgTemp()
 {
   if (sensor == 0)
   {
@@ -342,44 +342,44 @@ float BMSModule::getAvgTemp()
   }
 }
 
-float BMSModule::getModuleVoltage()
+float Tesla_BMSModule::getModuleVoltage()
 {
   return moduleVolt;
 }
 
-float BMSModule::getTemperature(int temp)
+float Tesla_BMSModule::getTemperature(int temp)
 {
   if (temp < 0 || temp > 1) return 0.0f;
   return temperatures[temp];
 }
 
-void BMSModule::setAddress(int newAddr)
+void Tesla_BMSModule::setAddress(int newAddr)
 {
   if (newAddr < 0 || newAddr > MAX_MODULE_ADDR) return;
   moduleAddress = newAddr;
 }
 
-int BMSModule::getAddress()
+int Tesla_BMSModule::getAddress()
 {
   return moduleAddress;
 }
 
-bool BMSModule::isExisting()
+bool Tesla_BMSModule::isExisting()
 {
   return exists;
 }
 
-void BMSModule::settempsensor(int tempsensor)
+void Tesla_BMSModule::settempsensor(int tempsensor)
 {
   sensor = tempsensor;
 }
 
-void BMSModule::setExists(bool ex)
+void Tesla_BMSModule::setExists(bool ex)
 {
   exists = ex;
 }
 
-void BMSModule::setIgnoreCell(float Ignore)
+void Tesla_BMSModule::setIgnoreCell(float Ignore)
 {
   IgnoreCell = Ignore;
 }

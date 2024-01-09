@@ -24,7 +24,7 @@
 */
 
 #include <JoeMBMC.h>
-#include <BMSModuleManager.h>
+#include <Tesla_BMSModuleManager.h>
 #include <Arduino.h>
 #include <config.h>
 #include <ADC.h> //https://github.com/pedvide/ADC
@@ -1828,14 +1828,26 @@ void Menu(){
           if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][0] = menu_option_val;}
           Menu(); 
         break;
+        case 4:
+          settings.CAN_Map[1][0] = constrain(menu_option_val,0,255);
+          Menu();
+        break;
         case 5:
           if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][1] = menu_option_val;}
           Menu(); 
         break;
+        case 6:
+          settings.CAN_Map[1][1] = constrain(menu_option_val,0,255);
+          Menu();
+        break;        
         case 7:
           if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][2] = menu_option_val;}
           Menu(); 
         break;
+        case 8:
+          settings.CAN_Map[1][2] = constrain(menu_option_val,0,255);
+          Menu();
+        break;        
         case 9:
           if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][3] = menu_option_val;}
           Menu(); 

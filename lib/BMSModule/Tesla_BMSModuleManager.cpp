@@ -1,8 +1,8 @@
 #include "config.h"
-#include "BMSModuleManager.h"
+#include "Tesla_BMSModuleManager.h"
 #include "BMSUtil.h"
 
-extern EEPROMSettings settings;
+//extern EEPROMSettings settings;
 
 BMSModuleManager::BMSModuleManager(){
   for (int i = 1; i <= MAX_MODULE_ADDR; i++){

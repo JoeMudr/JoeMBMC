@@ -1,9 +1,10 @@
 #pragma once
+#include <FlexCAN_T4.h>
 
-class BMSModule
+class Tesla_BMSModule
 {
   public:
-    BMSModule();
+    Tesla_BMSModule();
     void readStatus();
     void clearmodule();
     void stopBalance();

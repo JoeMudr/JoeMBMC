@@ -1,6 +1,6 @@
 #pragma once
 #include "config.h"
-#include "BMSModule.h"
+#include "Tesla_BMSModule.h"
 
 class BMSModuleManager
 {
@@ -53,7 +53,7 @@ class BMSModuleManager
     float highestPackTemp;
     float highTemp;
     float lowTemp;
-    BMSModule modules[MAX_MODULE_ADDR + 1]; // store data for as many modules as we've configured for.
+    Tesla_BMSModule modules[MAX_MODULE_ADDR + 1]; // store data for as many modules as we've configured for.
     int batteryID;
     int numFoundModules;                    // The number of modules that seem to exist
     bool isFaulted;
