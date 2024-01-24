@@ -2,10 +2,12 @@
 #include <FlexCAN_T4.h>
  
 void Reset_Cause(uint32_t resetStatusReg);
+void BMSInit();
 void mAmpsec_calc();
 void Alarm_Check();
 byte Balancing(byte active = 1);
-void BMS_revive();
+void BMS_Poll();
+void BMC_Status_LED();
 byte Vehicle_CondCheck(byte tmp_status);
 byte ESS_CondCheck(byte tmp_status);
 void SOC_charged();
@@ -14,6 +16,8 @@ void can1_start();
 void can2_start();
 void CAN_read();
 void CAN_MC_read(CAN_message_t MSG);
+//template<CAN_DEV_TABLE _bus>
+//void CAN_BMC_send(FlexCAN_T4<_bus> &CanNr);
 void CAN_BMC_send(byte CAN_Nr);
 void CAN_Charger_Send(byte CAN_Nr);
 void CAN_Debug_IN(CAN_message_t MSG, byte CanNr);

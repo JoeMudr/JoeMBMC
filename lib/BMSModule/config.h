@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Arduino.h>
 
 //Set to the proper port for your USB connection - SerialUSB on Due (Native) or Serial for Due (Programming) or Teensy
@@ -13,6 +12,7 @@
 // Secondary CAN / Serial
 #define DisplaySerial Serial4
 
+//Tesla BMS_Module Comms
 #define REG_DEV_STATUS      0
 #define REG_GPAI            1
 #define REG_VCELL1          3
@@ -34,34 +34,57 @@
 #define REG_ADC_CONV        0x34
 #define REG_ADDR_CTRL       0x3B
 
-#define MAX_MODULE_ADDR     0x3E
+//VW BMS_Module Comms
+//??
 
-#define EEPROM_VERSION      0x20   //update any time EEPROM struct below is changed.
+// Values for Modules
+#define MAX_MODULE_ADDR     62
+#define MAX_CELL_No         13
+#define MAX_CELL_No_Tesla   6
+#define MAX_CELL_No_VW      13
+#define MAX_Temp_Sens       3
+
+#define EEPROM_VERSION      0x22   //update any time EEPROM struct below is changed.
 #define EEPROM_PAGE         0
+
+enum BMS_t {BMS_Dummy, BMS_Tesla, BMS_VW_MEB, BMS_VW_eGolf, BMS_Type_MAX};
+
+/*
+CAN mapping
+CAN_BMC       // general BMC-Output
+CAN_BMS       // Control of OEM Battery Managment Boards
+CAN_Charger   // Charger control
+CAN_Curr_Sen  // Current Sensor Bus
+CAN_MC        // Motor Controller
+*/
+enum {CAN_BMC, CAN_BMS, CAN_Charger, CAN_Curr_Sen, CAN_MC};
 
 typedef struct {
   byte version;
   byte checksum;
   byte batteryID;  //which battery ID should this board associate as on the CAN bus
-  float OverVSetpoint; // in mV
-  float UnderVSetpoint; // in mV
-  float DischHys;
-  float ChargeVSetpoint;
-  float ChargeVsetpoint_toll;
-  float UnderVDerateSetpoint;
-  float ChargeHys;
-  float StoreVsetpoint;
-  float WarnOff;
-  float OverTSetpoint;
-  float UnderTSetpoint;
-  float UnderTDerateSetpoint;
-  float OverTDerateSetpoint;
-  float WarnToff;
-  float CellGap;
-  byte IgnoreTemp;
-  float IgnoreVolt;
-  float balanceVoltage;
-  float balanceHyst;
+  BMS_t BMSType; // see BMS_Type above
+  uint16_t OverVSetpoint; // in mV
+  uint16_t UnderVSetpoint; // in mV
+  uint16_t DischHys;
+  uint16_t ChargeVSetpoint;
+  uint16_t ChargeVsetpoint_toll;
+  uint16_t UnderVDerateSetpoint;
+  uint16_t ChargeHys;
+  uint16_t StoreVsetpoint;
+  uint16_t WarnVoltageOffset;
+  
+  int16_t OverTSetpoint;
+  int16_t UnderTSetpoint;
+  int16_t UnderTDerateSetpoint;
+  int16_t OverTDerateSetpoint;
+  int16_t WarnTempOffset;
+
+  uint16_t CellGap;
+  byte useTempSensor;
+  uint16_t IgnoreVolt;
+  uint16_t balanceVoltage;
+  uint16_t balanceHyst;
   int Scells;
   int Pstrings;
   int CAP; // in Ah
@@ -91,7 +114,7 @@ typedef struct {
   int chargertype;
   byte nchargers;
   uint16_t CurDead;
-  float DisTaper;
+  uint16_t DisTaper;
   byte ChargerDirect;
   int mctype;
   byte SerialCan; // bool
