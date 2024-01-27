@@ -60,7 +60,12 @@ bool BMSModule::readModule(CAN_message_t &msg, int Id = 0){
                 {VW_decodeT_Bal(msg);} // don't set retVal. Return value used to confirm presence of module when reading Voltage!
         }
         break;
-        
+        case BMS_BMW_I3:
+        {
+            if(0x99 < msg.id && msg.id < 0x160){retVal = BMW_decodeV_Bal(msg,Id);}
+            if((msg.id & 0xFF0) == 0x170){BMW_decodeT(msg);} // don't set retVal. Return value used to confirm presence of module when reading Voltage!
+        }
+        break;
         default:
             break;
     }
@@ -140,27 +145,6 @@ bool BMSModule::VW_decodeT_Bal(CAN_message_t &msg){
     case BMS_VW_MEB:
         //Check module is not initializing OR a "spoof module" 
         if (msg.buf[5] != 0xFF){
-            /*
-           if(msg.id == 0x1A5555F0){
-            SERIALCONSOLE.print(msg.id,HEX);
-            SERIALCONSOLE.print(": ");
-            SERIALCONSOLE.print(msg.buf[0],HEX);
-            SERIALCONSOLE.print(" ");
-            SERIALCONSOLE.print(msg.buf[1],HEX);
-            SERIALCONSOLE.print(" | ");
-            SERIALCONSOLE.print(msg.buf[2],HEX);
-            SERIALCONSOLE.print(" | ");
-            SERIALCONSOLE.print(msg.buf[3],HEX);
-            SERIALCONSOLE.print(" | ");
-            SERIALCONSOLE.print(msg.buf[4],HEX);
-            SERIALCONSOLE.print(" | ");
-            SERIALCONSOLE.print(msg.buf[5],HEX);
-            SERIALCONSOLE.print(" | ");
-            SERIALCONSOLE.print(msg.buf[6],HEX);            
-            SERIALCONSOLE.print(" | ");
-            SERIALCONSOLE.println(msg.buf[7],DEC);               
-           }
-           */
             temperatures[0] = ((uint16_t(((msg.buf[5] & 0x0F) << 4) | ((msg.buf[4] & 0xF0) >> 4)) * 0.5) - 40) * 10; //MEB Bits 36-44
             retVal = true;
         }
@@ -169,6 +153,57 @@ bool BMSModule::VW_decodeT_Bal(CAN_message_t &msg){
     }  
     return retVal; 
 }
+
+bool BMSModule::BMW_decodeV_Bal(CAN_message_t &msg, byte Id){
+    bool retVal = false;
+    switch (Id){
+        case 0:
+        //error = msg.buf[0] + (msg.buf[1] << 8) + (msg.buf[2] << 16) + (msg.buf[3] << 24); // [ToDo] Errorhandling
+        balstat = ((msg.buf[5] & 0x0F ) << 8) + msg.buf[4];
+        break;
+
+        case 1:
+            if (msg.buf[1] < 0x40){ cellVolt[0] = msg.buf[0] + ((msg.buf[1] & 0x3F) << 8); }
+            if (msg.buf[3] < 0x40){ cellVolt[1] = msg.buf[2] + ((msg.buf[3] & 0x3F) << 8); }
+            if (msg.buf[5] < 0x40){ cellVolt[2] = msg.buf[4] + ((msg.buf[5] & 0x3F) << 8); }
+            retVal = true;
+        break;
+
+        case 2:
+            if (msg.buf[1] < 0x40){ cellVolt[3] = msg.buf[0] + ((msg.buf[1] & 0x3F) << 8); }
+            if (msg.buf[3] < 0x40){ cellVolt[4] = msg.buf[2] + ((msg.buf[3] & 0x3F) << 8); }
+            if (msg.buf[5] < 0x40){ cellVolt[5] = msg.buf[4] + ((msg.buf[5] & 0x3F) << 8); }
+            retVal = true;
+        break;
+
+        case 3:
+            if (msg.buf[1] < 0x40){ cellVolt[6] = msg.buf[0] + ((msg.buf[1] & 0x3F) << 8); }
+            if (msg.buf[3] < 0x40){ cellVolt[7] = msg.buf[2] + ((msg.buf[3] & 0x3F) << 8); }
+            if (msg.buf[5] < 0x40){ cellVolt[8] = msg.buf[4] + ((msg.buf[5] & 0x3F) << 8); }
+            retVal = true;
+        break;
+
+        case 4:
+            if (msg.buf[1] < 0x40){ cellVolt[9] = msg.buf[0] + ((msg.buf[1] & 0x3F) << 8); }
+            if (msg.buf[3] < 0x40){ cellVolt[10] = msg.buf[2] + ((msg.buf[3] & 0x3F) << 8); }
+            if (msg.buf[5] < 0x40){ cellVolt[11] = msg.buf[4] + ((msg.buf[5] & 0x3F) << 8); }
+            retVal = true;
+        break;
+
+        default: break;
+    }
+    return retVal;
+}
+bool BMSModule::BMW_decodeT(CAN_message_t &msg){
+    bool retVal = false;
+    for (int Tsens = 0; Tsens < MAX_Temp_Sens; Tsens++){
+        temperatures[Tsens] = (msg.buf[Tsens] - 40) * 10;
+        retVal = false;
+        // if (temperatures[Tsens] > -40){temperatures[Tsens] = temperatures[Tsens] + TempOff;} // [Todo] WTF?!
+    }
+    return retVal;
+}
+
 
 bool BMSModule::Tesla_readModule(){
         bool retVal = false;

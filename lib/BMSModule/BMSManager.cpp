@@ -95,7 +95,7 @@ CAN_Struct BMSManager::poll(){
         
             msg = Balancing(0,false); // deactivate balancing for measurement first
             //find first unused ID.
-            //Attention: Cuntr_Struct has to be big enough to hold all messages!
+            //Attention: CAN_Struct has to be big enough to hold all messages!
             byte msgNr;
             for(msgNr = 0; msgNr < CAN_Struct_size; msgNr++){
                 if(!msg.Frame[msgNr].id) break;
@@ -179,6 +179,16 @@ void BMSManager::readModulesValues(CAN_message_t &msg){
                 };
             }
         }
+        break;
+        case BMS_BMW_I3:
+        BMW_get_CMU_ID(msg, CMU, Id);
+            if(CMU){
+                chkRead = modules[CMU].readModule(msg, Id);
+                if (chkRead){
+                    modules[CMU].setExists(true);
+                    moduleReadCnt++;
+                };
+            }
         break;
         
         default: break;
@@ -275,13 +285,11 @@ void BMSManager::VW_get_CMU_ID(CAN_message_t &msg, byte &CMU, byte &Id){
     //Temperatures
     uint32_t tmpID = msg.id;
     tmpID &= 0x1FFFFFFF;
-    //SERIALCONSOLE.println(tmpID, HEX);
     if((0x1A555400 < tmpID && tmpID < 0x1A555440)  || (0x1A5555EF < tmpID && tmpID < 0x1A5555FF)){
-        //SERIALCONSOLE.println(tmpID, HEX);
         switch (BMSType){
         case BMS_VW_eGolf:
             CMU = (msg.id & 0xFF);
-            if (10 < CMU && CMU < 60){ CMU = ((CMU & 0x0F) >> 1) + 1; } //[ToDo] Makes no sense. lowest CMU-ID would be 6!          
+            if (10 < CMU && CMU < 60){ CMU = ((CMU & 0x0F) >> 1) + 1; } //[ToDo] Toms Code! Makes no sense. lowest CMU-ID would be 6!          
         break;
         case BMS_VW_MEB:
             CMU = ((msg.id & 0x0F) + 1);
@@ -289,6 +297,26 @@ void BMSManager::VW_get_CMU_ID(CAN_message_t &msg, byte &CMU, byte &Id){
         default:
             break;
         }
+    }
+}
+
+void BMSManager::BMW_get_CMU_ID(CAN_message_t &msg, byte &CMU, byte &Id){
+    // Voltages
+    if(0x99 < msg.id && msg.id < 0x160){
+        CMU = (msg.id & 0x00F) + 1;
+        Id = (msg.id & 0x0F0) >> 4;
+        switch (Id){
+            // [ToDo] What's up with 0x1?
+            case 0x0: Id = 0; break;
+            case 0x2: Id = 1; break;
+            case 0x3: Id = 2; break;
+            case 0x4: Id = 3; break;
+            case 0x5: Id = 4; break;
+        }
+    }
+    // Temperatures
+    if((msg.id & 0xFF0) == 0x170){
+        CMU = (msg.id & 0x00F) + 1;
     }
 }
 

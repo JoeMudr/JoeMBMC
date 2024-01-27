@@ -62,5 +62,8 @@ private:
     byte ModuleAddress;
     bool VW_decodeV(CAN_message_t &msg, byte Id);
     bool VW_decodeT_Bal(CAN_message_t &msg);
+    bool BMW_decodeV_Bal(CAN_message_t &msg, byte Id);
+    bool BMW_decodeT(CAN_message_t &msg);
     bool Tesla_readModule();
+    
 };

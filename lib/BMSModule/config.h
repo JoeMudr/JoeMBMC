@@ -47,7 +47,7 @@
 #define EEPROM_VERSION      0x22   //update any time EEPROM struct below is changed.
 #define EEPROM_PAGE         0
 
-enum BMS_t {BMS_Dummy, BMS_Tesla, BMS_VW_MEB, BMS_VW_eGolf, BMS_Type_MAX};
+enum BMS_t {BMS_Dummy, BMS_Tesla, BMS_VW_MEB, BMS_VW_eGolf, BMS_BMW_I3, BMS_Type_MAX};
 
 /*
 CAN mapping

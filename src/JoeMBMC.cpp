@@ -42,7 +42,7 @@
 */
 
 /////Version Identifier/////////
-int firmver = 240122;
+int16_t firmver = 240122;
 
 //Tesla_BMSModuleManager bms;
 BMSManager bms;
@@ -53,23 +53,23 @@ float filterFrequency = 5.0 ;
 FilterOnePole lowpassFilter( LOWPASS, filterFrequency );
 
 //BMC wiring//
-const int ACUR2 = A0; // current 1
-const int ACUR1 = A1; // current 2
-const int IN1_Key = 19; // input 1 - high active
-const int IN2_Gen = 18; // input 2 - high active
-const int IN3_AC = 20; // input 3 - high active
-const int IN4 = 21; // input 4 - high active
-const int OUT1 = 6;// output 1 - high active
-const int OUT2 = 5;// output 2 - high active
-const int OUT3 = 4;// output 3 - high active
-const int OUT4 = 3;// output 4 - high active
-const int OUT5 = 11;// output 5 - Low active / PWM
-const int OUT6 = 12;// output 6 - Low active / PWM
-const int OUT7 = 10; // output 7 - Low active / PWM
-const int OUT8 = 9; // output 8 - Low active / PWM
-const int LED = 13;
+const byte ACUR2 = A0; // current 1
+const byte ACUR1 = A1; // current 2
+const byte IN1_Key = 19; // input 1 - high active
+const byte IN2_Gen = 18; // input 2 - high active
+const byte IN3_AC = 20; // input 3 - high active
+const byte IN4 = 21; // input 4 - high active
+const byte OUT1 = 6;// output 1 - high active
+const byte OUT2 = 5;// output 2 - high active
+const byte OUT3 = 4;// output 3 - high active
+const byte OUT4 = 3;// output 4 - high active
+const byte OUT5 = 11;// output 5 - Low active / PWM
+const byte OUT6 = 12;// output 6 - Low active / PWM
+const byte OUT7 = 10; // output 7 - Low active / PWM
+const byte OUT8 = 9; // output 8 - Low active / PWM
+const byte LED = 13;
 
-unsigned long LED_Timer = 0;
+uint32_t LED_Timer = 0;
 
 byte BMC_Stat = 0;
 
@@ -118,7 +118,7 @@ byte BMC_Stat = 0;
 
 //Serial Menu
 bool menu_load = 0;
-int menu_option = 0;
+byte menu_option = 0;
 byte menu_current = 0;
 
 #define Menu_Start 0
@@ -136,12 +136,12 @@ byte menu_current = 0;
 #define Menu_Quit 113
 
 //Errors
-unsigned long error_timer = 0;
+uint32_t error_timer = 0;
 
 byte Settings_unsaved= 0;
 
 //variables for output control
-unsigned long Pretimer;
+uint32_t Pretimer;
 uint16_t pwmfreq = 18000;//pwm frequency
 
 uint16_t chargecurrent = 0; // in 0,1A
@@ -160,12 +160,12 @@ uint16_t discurrent = 0;
 */
 unsigned char alarm[4],warning[4] = {0, 0, 0, 0};
 
-unsigned long warning_timer = 0;
+uint32_t warning_timer = 0;
 
 unsigned char bmcname[8] = {'J', 'O', 'E', 'M', ' ', 'B', 'M', 'C'};
 unsigned char bmcmanu[8] = {'J', 'O', 'E', 'M', ' ', 'T', 'E', 'C'};
 
-signed long ISAVoltage1, ISAVoltage2, ISAVoltage3 = 0; //mV only with ISAscale sensor
+int32_t ISAVoltage1, ISAVoltage2, ISAVoltage3 = 0; //mV only with ISAscale sensor
 
 //variables for current/capacity calulation
 uint16_t Sen_AnalogueRawValue;
@@ -175,15 +175,15 @@ float currentavg = 0.0f; //mA
 float currentavg_array[60];
 byte currentavg_counter = 0;
 float RawCur;
-long mampsecond = 0; // Range 0 = full to settings.cap * -1 = empty
-long mampsecondTimer = 0;
+int32_t mampsecond = 0; // Range 0 = full to settings.cap * -1 = empty
+int32_t mampsecondTimer = 0;
 int64_t mWs = 0; // Capacity in mWs (see mampsecond)
-long mWsTimer = 0;
-unsigned long lastTime;
-unsigned long looptime, looptime1, UnderTime, cleartime, baltimer = 0; //ms
-int Sen_Analogue_Num = 1; // 1 = Sensor 1; 2 = Sensor 2
-int TCAP = 0; //Temperature corrected Capacity in Ah including settings.Pstrings! settings.CAP * settings.Pstrings * -1 + (CAP_Temp_alteration() / 3600000);
-int TCAP_Wh = 0;
+int32_t mWsTimer = 0;
+uint32_t lastTime;
+uint32_t looptime, looptime1, UnderTime, cleartime, baltimer = 0; //ms
+byte Sen_Analogue_Num = 1; // 1 = Sensor 1; 2 = Sensor 2
+int16_t TCAP = 0; //Temperature corrected Capacity in Ah including settings.Pstrings! settings.CAP * settings.Pstrings * -1 + (CAP_Temp_alteration() / 3600000);
+int16_t TCAP_Wh = 0;
 //Variables for SOC calc
 byte SOC = 100; //State of Charge
 byte SOCset = 0;
@@ -191,8 +191,8 @@ byte SOCset = 0;
 //charger variables
 byte maxac1 = 16; //Shore power 16A per charger
 byte maxac2 = 10; //Generator Charging
-int chargerid1 = 0x618; //bulk chargers (brusa)
-int chargerid2 = 0x638; //finishing charger (brusa)
+const int16_t chargerid1 = 0x618; //bulk chargers (brusa)
+const int16_t chargerid2 = 0x638; //finishing charger (brusa)
 float chargerendbulk = 0; //V before Charge Voltage to turn off the bulk charger/s
 float chargerend = 0; //V before Charge Voltage to turn off the finishing charger/s
 
@@ -208,7 +208,7 @@ byte cont_pulltime = 255;
 Array for looping through outputs
 OUT1 = 1, OUT2 = 2 ...
 */
-const int *Outputs[9] = {0,&OUT1,&OUT2,&OUT3,&OUT4,&OUT5,&OUT6,&OUT7,&OUT8};
+const byte *Outputs[9] = {0,&OUT1,&OUT2,&OUT3,&OUT4,&OUT5,&OUT6,&OUT7,&OUT8};
 
 /*
 Array for function states & according timers for PWMs (full pull->reduced power)
@@ -261,7 +261,7 @@ String Out_Functions[] = {
 #define Out_Gauge 11
 
 u_int32_t cont_timer = 0;
-unsigned long Out_PWM_fullpull_Timer = 0; // PWM Timer
+uint32_t Out_PWM_fullpull_Timer = 0; // PWM Timer
 
 // CAN
 FlexCAN_T4<CAN1> can1;
@@ -278,10 +278,10 @@ bool debug_CAN1 = 0; //view can frames
 bool debug_CAN2 = 0; //view can frames
 bool debug_Gauge = 0;
 byte  debug_Gauge_val = 0;
-unsigned long debug_Gauge_timer = 0;
+uint32_t debug_Gauge_timer = 0;
 bool debug_Cur = 0;
 bool debug_CSV = 0;
-int debug_Digits = 2; //amount of digits behind decimal for voltage reading
+byte debug_Digits = 2; //amount of digits behind decimal for voltage reading
 
 ADC *adc = new ADC(); // adc object
 
@@ -838,7 +838,7 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.print("mV| Vhigh: ");
   SERIALCONSOLE.print(bms.getHighCellVolt());
   SERIALCONSOLE.print("mV| DeltaV: ");
-  int deltaV = (bms.getHighCellVolt() - bms.getLowCellVolt());
+  int16_t deltaV = (bms.getHighCellVolt() - bms.getLowCellVolt());
   SERIALCONSOLE.print(deltaV);
   SERIALCONSOLE.print("mV| tlow: ");
   SERIALCONSOLE.print(float(bms.getLowTemperature()) / 10,1);
@@ -910,9 +910,9 @@ void SERIALCONSOLEprint(){
 
 //called by Timer
 void mAmpsec_calc(){ 
-  unsigned long nowTime = millis();
+  uint32_t nowTime = millis();
   u_int16_t tmpTime = 0;
-  long tmpmampsecond = 0;
+  int32_t tmpmampsecond = 0;
   if((nowTime - lastTime) < 0){tmpTime = 4294967295 - lastTime + nowTime;} // Catch millis() overflow [ToTest]
   else{tmpTime = nowTime - lastTime;}
   tmpmampsecond = ((currentact+currentlast)/2 * tmpTime / 1000);
@@ -963,7 +963,7 @@ float SEN_AnalogueRead(float tmp_currrentlast){
 } 
 
 float CAN_SEN_read(CAN_message_t MSG){
-  signed long CANmilliamps = 0;
+  int32_t CANmilliamps = 0;
   switch (MSG.id){
     //LEM CAB
     // [ToDo] CAB1500 has same ID. ALso same Data?
@@ -992,7 +992,7 @@ float CAN_SEN_read(CAN_message_t MSG){
   return CANmilliamps;
 }
 
-signed long CAN_SEN_LEMCAB(CAN_message_t MSG){
+int32_t CAN_SEN_LEMCAB(CAN_message_t MSG){
   /*
   80000000H = 0 mA,
   7FFFFFFFH = −1 mA,
@@ -1002,15 +1002,15 @@ signed long CAN_SEN_LEMCAB(CAN_message_t MSG){
   */
  
   if(MSG.buf[0]==0xff && MSG.buf[1]==0xff && MSG.buf[2]==0xff && MSG.buf[3]==0xff && MSG.buf[4] & 8){return 0;} // check error bit 32. 1 = Error [ToTest]
-  signed long LEM_milliamps = 0;
-  for (int i = 0; i < 4; i++){LEM_milliamps = (LEM_milliamps << 8) | MSG.buf[i];}
+  int32_t LEM_milliamps = 0;
+  for (byte i = 0; i < 4; i++){LEM_milliamps = (LEM_milliamps << 8) | MSG.buf[i];}
   LEM_milliamps -= 0x80000000;
   //SERIALCONSOLE.println(LEM_milliamps); //debug
   return LEM_milliamps;
 }
 
-signed long CAN_SEN_VictronLynx(CAN_message_t MSG){
-  signed long Victron_milliamps = 0;
+int32_t CAN_SEN_VictronLynx(CAN_message_t MSG){
+  int32_t Victron_milliamps = 0;
   if (MSG.buf[4] == 0xff && MSG.buf[3] == 0xff) return 0;
   int16_t current = (int)MSG.buf[4] << 8; // in 0.1A increments
   current |= MSG.buf[3];
@@ -1019,7 +1019,7 @@ signed long CAN_SEN_VictronLynx(CAN_message_t MSG){
 }
 
 void CAN_Debug_IN(CAN_message_t MSG, byte CanNr){
-  int pgn = 0;
+  int16_t pgn = 0;
   
   switch (CanNr){
     case 1: SERIALCONSOLE.print("CAN1 "); break;
@@ -1036,7 +1036,7 @@ void CAN_Debug_IN(CAN_message_t MSG, byte CanNr){
     SERIALCONSOLE.print(MSG.id, HEX);
     SERIALCONSOLE.print("  ");
   }
-  for (int i = 0; i < MSG.len; i++) { // print the data
+  for (byte i = 0; i < MSG.len; i++) { // print the data
     SERIALCONSOLE.print(MSG.buf[i], HEX);
     SERIALCONSOLE.print(" ");
   }
@@ -1049,7 +1049,7 @@ void Currentavg_Calc(){
   currentavg_counter++;
   if(currentavg_counter > 59){currentavg_counter = 0;}
   float current_temp = 0;
-  for (int i=0; i<60; i++){
+  for (byte i=0; i<60; i++){
     current_temp += currentavg_array[i];
   }
   currentavg = current_temp / 60;
@@ -1102,7 +1102,7 @@ void Current_debug(){
 }
 
 
-int ETA(){ // return minutes
+int16_t ETA(){ // return minutes
   //[ToDo] weiter glätten! mögl. vordef./errechneten Durchschnittswert einbeziehen?
   if(BMC_Stat == Stat_Charge){
     return abs(mampsecond / 1000 / 60 / abs(currentavg/1000));
@@ -1115,13 +1115,13 @@ int ETA(){ // return minutes
   }
 }
 
-int SOH_calc(){
+int16_t SOH_calc(){
   return round(float(settings.CAP) / float(settings.designCAP) * 100);
 }
 
 void SOC_update(){
   //[ToDo]umbau auf Wh?
-  int SOC_tmp = 0;
+  int16_t SOC_tmp = 0;
   if (!SOCset && bms.getAvgCellVolt() > 0){
     if (millis() > 10000){
       SOC_tmp = map(uint16_t(bms.getAvgCellVolt() * 1000), settings.socvolt[0], settings.socvolt[2], settings.socvolt[1], settings.socvolt[3]);
@@ -1166,7 +1166,7 @@ void SOC_charged(){
     bms.getLowTemperature()
     settings.Temp_Cap_Map[x][x]
 */
-//long CAP_Temp_alteration(){
+//int32_t CAP_Temp_alteration(){
 float CAP_Temp_alteration(){
   float tmp_map = 0;
 
@@ -1179,7 +1179,7 @@ float CAP_Temp_alteration(){
     return float(settings.Temp_Cap_Map[1][4]) / 100;
   }
   //everything in between
-  for (int i = 1; i < 4; i++){
+  for (byte i = 1; i < 4; i++){
     if (bms.getLowTemperature() >= float(settings.Temp_Cap_Map[0][i]) && bms.getLowTemperature() < float(settings.Temp_Cap_Map[0][i+1])){
       tmp_map = map(bms.getLowTemperature(), settings.Temp_Cap_Map[0][i], settings.Temp_Cap_Map[0][i+1],settings.Temp_Cap_Map[1][i],settings.Temp_Cap_Map[1][i+1]);
       return tmp_map / 100;
@@ -1228,7 +1228,7 @@ Return index/OutputNr. for specified function
 0 if nothing is found
 */
 byte find_OUT_Mapping(byte Function){
-  for(int i = 1; i < 9; i++){
+  for(byte i = 1; i < 9; i++){
     if(settings.Out_Map[0][i] == Function){
       return i;
     }
@@ -1890,14 +1890,10 @@ void Menu(){
           Serial_clear();
           SERIALCONSOLE.println("CAN-Bus settings");
           SERIALCONSOLE.println("--------------------");
-          SERIALCONSOLE.println("CAN1:");
-          SERIALCONSOLE.print("[1] Can Baudrate in kbps: ");
+          SERIALCONSOLE.print("[1] Can1 Baudrate in kbps: ");
           SERIALCONSOLE.println(settings.CAN1_Speed / 1000);
-          SERIALCONSOLE.println();
-          SERIALCONSOLE.println("CAN2:");
-          SERIALCONSOLE.print("[2] Can Baudrate in kbps: ");
+          SERIALCONSOLE.print("[2] Can2 Baudrate in kbps: ");
           SERIALCONSOLE.println(settings.CAN2_Speed / 1000);
-          SERIALCONSOLE.println();
           SERIALCONSOLE.print("[d] Debug CAN1&2: ");
           if(debug_CAN2){ SERIALCONSOLE.println("ON"); } 
           else {SERIALCONSOLE.println("OFF");}
@@ -1987,7 +1983,7 @@ void Serial_clear(){
   for (byte i = 0; i < 40; i++){SERIALCONSOLE.println();}
 }
 
-int pgnFromCANId(int canId){ //Parameter Group Number
+int16_t pgnFromCANId(int16_t canId){ //Parameter Group Number
   if ((canId & 0x10000000) == 0x10000000)
   {return (canId & 0x03FFFF00) >> 8;}
   else
@@ -2183,7 +2179,7 @@ void Dash_update(){
   Nextion_send("click ", "refresh,0");
 
   //Err_Warn-LED
-  int Err_Warn = 0;
+  int16_t Err_Warn = 0;
   if (BMC_Stat == Stat_Error){
     Err_Warn = 63488; // red
   } else if (Warn_handle()){
@@ -2289,8 +2285,8 @@ void CAN_BMC_send(byte CAN_Nr) //BMC CAN Messages
   MSG.len = 8;
   MSG.buf[0] = lowByte(uint16_t(bms.getPackVoltage() / 10));
   MSG.buf[1] = highByte(uint16_t(bms.getPackVoltage() / 10));
-  MSG.buf[2] = lowByte(long(currentact / 100));
-  MSG.buf[3] = highByte(long(currentact / 100));
+  MSG.buf[2] = lowByte(int32_t(currentact / 100));
+  MSG.buf[3] = highByte(int32_t(currentact / 100));
   MSG.buf[4] = lowByte(int16_t(bms.getAvgTemperature() * 10));
   MSG.buf[5] = highByte(int16_t(bms.getAvgTemperature() * 10));
   MSG.buf[6] = 0;
@@ -2558,7 +2554,7 @@ void CAN_Debug_OUT(){
   SERIALCONSOLE.print("OUT: ");
   SERIALCONSOLE.print(outMsg.id, HEX); //debug
   if (outMsg.len){
-    for (int i = 0; i < (outMsg.len + 1); i++){
+    for (byte i = 0; i < (outMsg.len + 1); i++){
       SERIALCONSOLE.print(" ");
       SERIALCONSOLE.print(outMsg.buf[i], HEX); //debug
     }

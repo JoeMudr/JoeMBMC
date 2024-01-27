@@ -56,6 +56,7 @@ private:
     byte balancingCells[MAX_MODULE_ADDR+1];
     bool balancingActive;
     void VW_get_CMU_ID(CAN_message_t &msg,byte &CMU,byte &Id);
+    void BMW_get_CMU_ID(CAN_message_t &msg,byte &CMU,byte &Id);
     CAN_Struct VW_Balancing();
     void Tesla_Balancing();
     void Tesla_renumberModulesIDs(); // reset and re enumerate all Modules

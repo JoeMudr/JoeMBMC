@@ -1,8 +1,7 @@
 #pragma once
 #include <Arduino.h>
-
+//work in progress
 typedef struct {
     byte function;
     String funktionString;
-    byte PWM;
 } Out_Struct;
