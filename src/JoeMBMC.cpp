@@ -176,8 +176,6 @@ byte currentavg_counter = 0;
 uint32_t RawCur;
 int32_t mampsecond = 0; // Range 0 = full to settings.cap * -1 = empty
 int32_t mampsecondTimer = 0;
-int64_t mWs = 0; // Capacity in mWs (see mampsecond)
-int32_t mWsTimer = 0;
 uint32_t lastTime;
 uint32_t looptime, looptime1, UnderTime, cleartime, baltimer = 0; //ms
 byte Sen_Analogue_Num = 1; // 1 = Sensor 1; 2 = Sensor 2
@@ -473,16 +471,13 @@ void loop(){
     looptime = millis();
 
     TCAP = settings.Pstrings * CAP_Temp_alteration() * -1;
-    //TCAP_Wh = settings.CAP_Wh * CAP_Temp_alteration() * -1; // [ToDo]
+    TCAP_Wh = TCAP * bms.getPackVoltage() * -1; // [ToDo] value will fluctuate
 
     //copy Ampseconds from Timer Funktion
     noInterrupts();
     mampsecond += mampsecondTimer;
-    mWs += mWsTimer;
     if(mampsecond > 0){mampsecond = 0;}
-    if(mWs > 0){mWs = 0;}
     mampsecondTimer = 0;
-    mWsTimer = 0;
     interrupts();
 
     // [todo] move to separate function
@@ -867,9 +862,8 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.print(SOC);
   SERIALCONSOLE.print("% ");
   SERIALCONSOLE.print(float(mampsecond) / 3600, 2);
-  SERIALCONSOLE.print("mAh / ");
-  SERIALCONSOLE.print(float(mWs) / 3600, 2);
-  SERIALCONSOLE.print("mWh SOH: ");
+  SERIALCONSOLE.print("mAh ");
+  SERIALCONSOLE.print("SOH: ");
   SERIALCONSOLE.print(SOH_calc());
   SERIALCONSOLE.print("% ");
   SERIALCONSOLE.print(settings.CAP);
@@ -886,14 +880,14 @@ void SERIALCONSOLEprint(){
   String eta = String(ETA() / 60) + "h " + String(ETA() % 60) + "m";
   SERIALCONSOLE.println(eta);
   SERIALCONSOLE.println();
-  SERIALCONSOLE.println("Warning: ");
+  SERIALCONSOLE.print("Warning: ");
   for (byte i = 0; i < 4; i++){
     SERIALCONSOLE.print(warning[i], BIN);
     SERIALCONSOLE.print(" ");
   }
   SERIALCONSOLE.println();
   SERIALCONSOLE.println();
-  SERIALCONSOLE.println("Error: ");
+  SERIALCONSOLE.print("Error: ");
   for (byte i = 0; i < 4; i++){
     SERIALCONSOLE.print(alarm[i], BIN);
     SERIALCONSOLE.print(" ");
@@ -916,7 +910,6 @@ void mAmpsec_calc(){
   else{tmpTime = nowTime - lastTime;}
   tmpmampsecond = ((currentact+currentlast)/2 * tmpTime / 1000);
   mampsecondTimer += tmpmampsecond;
-  mWsTimer += tmpmampsecond * (float(bms.getPackVoltage()) / 1000);
   currentlast = currentact;
   lastTime = millis();  
 }
@@ -1126,8 +1119,6 @@ void SOC_update(){
       SOC_tmp = map(uint16_t(bms.getAvgCellVolt() * 1000), settings.socvolt[0], settings.socvolt[2], settings.socvolt[1], settings.socvolt[3]);
       SOC = constrain(SOC_tmp, 0, 100);// keep SOC bettween 0 and 100
       mampsecond = (100 - SOC) * TCAP * (3600000/100);
-      //SERIALCONSOLE.println((100 - SOC) * TCAP_Wh * (3600000/100));
-      mWs = (100 - SOC) * TCAP_Wh * (3600000/100); // immer 0?
       SOCset = 1;
       if (!menu_load){
         SERIALCONSOLE.println();
@@ -1135,9 +1126,7 @@ void SOC_update(){
         SERIALCONSOLE.print(SOC);
         SERIALCONSOLE.print("%, ");
         SERIALCONSOLE.print(mampsecond);
-        SERIALCONSOLE.print("mAs, ");
-        SERIALCONSOLE.print(mWs);
-        SERIALCONSOLE.print("mWs");        
+        SERIALCONSOLE.print("mAs");       
         SERIALCONSOLE.print("--------");
       }
     }
@@ -1149,14 +1138,12 @@ void SOC_update(){
     SOC_tmp = map(uint16_t(bms.getAvgCellVolt() * 1000), settings.socvolt[0], settings.socvolt[2], settings.socvolt[1], settings.socvolt[3]);
     SOC = constrain(SOC_tmp, 0, 100);// keep SOC between 0 and 100
     mampsecond = (TCAP * 1000 - (SOC * TCAP * settings.Pstrings * 10)) * 3600;
-    mWs = (TCAP_Wh * 1000 - (SOC * TCAP_Wh * 10)) * 3600; //pstrings?
   }
 }
 
 void SOC_charged(){
     SOC = 100;
     mampsecond = 0;
-    mWs = 0;
 }
 
 /*
@@ -1191,12 +1178,6 @@ void CAP_recalc(){
     settings.CAP = round((abs(mampsecond) / 3600) / 1000 / settings.Pstrings);
     Settings_unsaved = 1;
   }
-  /*
-  if ((BMC_Stat == Stat_Charge && abs(mWs) > (settings.CAP_Wh * 3600 * 1000)) || ((warning[0] & 0x10) && bms.getAvgTemperature() > 20.00)){
-    settings.CAP_Wh = round((abs(mWs) / 3600) / 1000);
-    Settings_unsaved = 1;
-  } 
-  */ 
 }
 
 //START new Output Control
@@ -2164,7 +2145,7 @@ void Dash_update(){
   Nextion_send("firm.val=", firmver);
   Nextion_send("celldelta.val=", int(bms.getHighCellVolt() - bms.getLowCellVolt()));
   Nextion_send("cellbal.val=", bms.getBalancing());
-  Nextion_send("debug.val=", uint32_t(mWs / 3600000));
+  //Nextion_send("debug.val=", uint32_t(mWs / 3600000));
   Nextion_send("eta.txt=", eta);
   Nextion_send("etad.txt=", eta);
   Nextion_send("click ", "refresh,1"); //use Refresh-Button to Update Values on the Display
