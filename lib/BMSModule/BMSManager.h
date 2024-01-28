@@ -24,11 +24,11 @@ public:
     void readModulesValues(CAN_message_t &msg); // CAN
     void printAllCSV(unsigned long timestamp, float current, int SOC);
     void printPackDetails();
-    uint16_t getHighCellVolt();
-    uint16_t getLowCellVolt();
+    uint16_t getHighCellVolt(); // in mV
+    uint16_t getLowCellVolt(); // in mV
     int16_t getHighTemperature();
     int16_t getLowTemperature();
-    uint32_t getPackVoltage();
+    uint32_t getPackVoltage(); // in mV
     uint16_t getAvgCellVolt();
     int16_t getAvgTemperature();
     void clearModules();

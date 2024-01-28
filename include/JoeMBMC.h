@@ -64,3 +64,4 @@ void set_OUTs();
 void set_OUT_States(byte Function = 254);
 uint32_t CAP_Temp_alteration();
 void OUT_Debug();
+bool ChargeActive();

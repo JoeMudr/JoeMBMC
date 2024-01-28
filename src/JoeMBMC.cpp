@@ -99,18 +99,6 @@ byte BMC_Stat = 0;
 #define Charger_Victron 5
 #define Charger_Coda 6
 
-//CANOpen States
-#define co_NMT_operational 0x01
-#define co_NMT_stop 0x02
-#define co_NMT_preop 0x80
-#define co_NMT_resetapp 0x81
-#define co_NMT_resetcom 0x82
-
-#define co_state_bootup 0x00
-#define co_state_stopped 0x04
-#define co_state_op 0x05
-#define co_state_preop 0x7f
-
 //Motor Controllers
 #define MC_No 0
 #define Curtis 1
@@ -283,7 +271,6 @@ byte debug_Digits = 2; //amount of digits behind decimal for voltage reading
 ADC *adc = new ADC(); // adc object
 
 IntervalTimer Timer_mAmpSec;
-IntervalTimer Timer_CO_SYNC;
 
 void loadSettings(){
   settings.version = EEPROM_VERSION;
@@ -442,7 +429,6 @@ void setup(){
   BMSInit();
 
   Timer_mAmpSec.begin(mAmpsec_calc, 500000);
- // Timer_CO_SYNC.begin(CO_SYNC,100000);
 }
 
 void loop(){
@@ -470,28 +456,26 @@ void loop(){
   if (millis() - looptime > 500){ // 0.5s loop
     looptime = millis();
 
+    // TCAP is negative. 0 = full, settings.CAP * -1 is empty.
     TCAP = settings.Pstrings * CAP_Temp_alteration() * -1;
-    TCAP_Wh = TCAP * bms.getPackVoltage() * -1; // [ToDo] value will fluctuate
+    TCAP_Wh = TCAP * round(float(bms.getPackVoltage()) / 1000) * -1; // [ToDo] value will fluctuate
 
-    //copy Ampseconds from Timer Funktion
+    // copy Ampseconds from Timer Funktion
     noInterrupts();
     mampsecond += mampsecondTimer;
     if(mampsecond > 0){mampsecond = 0;}
     mampsecondTimer = 0;
     interrupts();
 
-    // [todo] move to separate function
+    // Poll the BMS
     CAN_Struct CAN_Msg;
     CAN_Msg = bms.poll();
     for (byte CANMsgNr = 0; CANMsgNr < CAN_Struct_size; CANMsgNr++){
-      if (CAN_Msg.Frame[CANMsgNr].id){
+      if (CAN_Msg.Frame[CANMsgNr].id){ // bms.poll() returns a previously cleaned CAN_Struct. We only send actually filled Frames.
         if (settings.CAN_Map[0][CAN_BMS] & 1){can1.write(CAN_Msg.Frame[CANMsgNr]);}
         if (settings.CAN_Map[0][CAN_BMS] & 2){can2.write(CAN_Msg.Frame[CANMsgNr]);}
       }
     }
-    
-    // only serial Comm BMS are called here in the loop. CAN based BMS are called via CAN_read().
-    //if(settings.BMSType == BMS_Tesla){bms.readModulesValues();}
 
     if (!menu_load){ 
       SERIALCONSOLEprint(); 
@@ -605,19 +589,14 @@ void Alarm_Check(){
 
 
 byte Vehicle_CondCheck(byte tmp_status){ 
-  // [ToDo] Funktion läuft ohne Beschränkung in der Loop. BMS-Modul-Werte werden aber nur alle 0,5s geholt. 
-  // Eventuell diese Vergleiche auslagern bzw. mit BMB-Abfrage verknüpfen.
-
   // start with no Errors
   tmp_status = Stat_Ready;
 
   // Reset to Ready if all Inputs are LOW ?
   // if (digitalRead(IN1_Key) == LOW && digitalRead(IN2_Gen) == LOW && digitalRead(IN3_AC) == LOW && digitalRead(IN4) == LOW){tmp_status = Stat_Ready;}
-  
-  // [ToDo] alle "digitalRead(IN3)" durch Funktion zum Erkennen des Ladesteckers ersetzen. Diese sollte auch das erkennen über CAN enthalten.
 
   // detect KEY ON & AC OFF -> Drive
-  if (digitalRead(IN1_Key) == HIGH && digitalRead(IN3_AC) == LOW){
+  if (digitalRead(IN1_Key) == HIGH && ChargeActive() == false){
     if (precharged) {tmp_status = Stat_Drive;}
     else {tmp_status = Stat_Precharge;}
   } 
@@ -626,7 +605,7 @@ byte Vehicle_CondCheck(byte tmp_status){
   if (alarm[0] & 0b00010000) {tmp_status = Stat_Error;}
 
   //detect AC present & Check charging conditions
-  if (digitalRead(IN3_AC) == HIGH){
+  if (ChargeActive() == true){
     //start charging when Voltage is below Charge Voltage - ChargeHyst.
     if (bms.getHighCellVolt() < (settings.ChargeVSetpoint - settings.ChargeHys)){ 
       if (precharged || settings.ChargerDirect){tmp_status = Stat_Charge;}
@@ -647,7 +626,7 @@ byte Vehicle_CondCheck(byte tmp_status){
 //SERIALCONSOLE.println(tmp_status);
   // Set Error depending on Error conditions, except Undervoltage to let Charging recover from Undervoltage
   // Undertemp is no Error in Drive & Charge (--> derate)
-  //[ToDO] Fix Tlow
+  //[ToDO] Fix Tlow --> "Separate temperaturer thresholds for charge / discharge #18 "
   if (alarm[0] & 0b01010001 || /*((alarm[1] & 0x01) && (tmp_status != Stat_Drive || tmp_status != Stat_Precharge || tmp_status != Stat_Charge)) ||*/ alarm[3] & 0b00000001){tmp_status = Stat_Error;}
 //SERIALCONSOLE.println(tmp_status);
 
@@ -657,7 +636,6 @@ byte Vehicle_CondCheck(byte tmp_status){
 }
 
 byte ESS_CondCheck(byte tmp_status){
-  //[ToDo] Add balancing "allways" except when current over certain value.
   // Precharge first
   if (precharged){tmp_status = Stat_Healthy;}
   else {tmp_status = Stat_Precharge;}  
@@ -674,6 +652,16 @@ byte ESS_CondCheck(byte tmp_status){
   if (alarm[0] & 0b01010101 || (alarm[1] & 0b00000001)  || alarm[2] & 0b01010100){tmp_status = Stat_Error;}
   if (tmp_status != Stat_Error){error_timer = 0;}
   return tmp_status;
+}
+
+/*
+  Detect charging via external inputs like IN3_AC, CAN-bus...
+*/
+bool ChargeActive(){
+  bool retVal = false;
+  // Add more charge detections like CAN
+  if (digitalRead(IN3_AC) == HIGH){retVal = true;}
+  return retVal;
 }
 
 byte Warn_handle(){
@@ -805,8 +793,8 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.print(" | Cells: ");
   SERIALCONSOLE.print(bms.getSeriesCells());
   SERIALCONSOLE.print("/");
-  SERIALCONSOLE.print(settings.Scells*settings.Pstrings);
-  if (digitalRead(IN3_AC) == HIGH){ SERIALCONSOLE.print(" | AC Present"); }
+  SERIALCONSOLE.print(settings.Scells * settings.Pstrings);
+  if (ChargeActive() == true){ SERIALCONSOLE.print(" | Charger plugged"); }
   if (digitalRead(IN1_Key) == HIGH){ SERIALCONSOLE.print(" | Key ON"); }
   if (Balancing()){ SERIALCONSOLE.print(" | Balancing Active"); }
   SERIALCONSOLE.println();
@@ -958,7 +946,7 @@ uint32_t CAN_SEN_read(CAN_message_t MSG){
   int32_t CANmilliamps = 0;
   switch (MSG.id){
     //LEM CAB
-    // [ToDo] CAB1500 has same ID. ALso same Data?
+    // [ToTest] CAB1500 has same ID. ALso same Data?
     case 0x3c0: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-000
     case 0x3c1: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-001
     case 0x3c2: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-002 & CAB 300-C/SP3-010 & CAB-500 (all Versions)
@@ -1041,10 +1029,11 @@ void Currentavg_Calc(){
   currentavg_counter++;
   if(currentavg_counter > 59){currentavg_counter = 0;}
   uint32_t current_temp = 0;
-  for (byte i=0; i<60; i++){
+  uint16_t max_size = sizeof(currentavg_array)/sizeof(currentavg_array[0]);
+  for (byte i=0; i< max_size; i++){
     current_temp += currentavg_array[i];
   }
-  currentavg = current_temp / 60;
+  currentavg = current_temp / max_size;
 }
 
 void Current_debug(){
@@ -1099,11 +1088,8 @@ int16_t ETA(){ // return minutes
   if(BMC_Stat == Stat_Charge){
     return abs(mampsecond / 1000 / 60 / abs(currentavg/1000));
   }else{
-    if (currentavg >= 0){
-      return 0;
-    }else {
-      return abs((TCAP * 60 - mampsecond / 1000 / 60) / abs(currentavg/1000)); //[ToTest]
-    }
+    if (currentavg >= 0){ return 0;}
+    else { return abs((TCAP * 60 - mampsecond / 1000 / 60) / abs(currentavg/1000)); }
   }
 }
 
@@ -1112,7 +1098,6 @@ int16_t SOH_calc(){
 }
 
 void SOC_update(){
-  //[ToDo]umbau auf Wh?
   int16_t SOC_tmp = 0;
   if (!SOCset && bms.getAvgCellVolt() > 0){
     if (millis() > 10000){
@@ -1861,8 +1846,10 @@ void Menu(){
           if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_MC] = menu_option_val;}
           Menu(); 
         break;
-        case 111: CO_Send_SDO(0x26,2,0,0x1800,0x02,0); break; // "o" for SDO
-        case 112: CO_SDO_send_test(0x26); break; // "p" for PDO
+        case 111: //CO_Send_SDO(0x26,2,0,0x1800,0x02,0); // "o" for SDO
+        break;
+        case 112: //CO_SDO_send_test(0x26); // "p" for PDO
+        break;
         case 100: debug_CAN1 = !debug_CAN1; debug_CAN2 = !debug_CAN2; Menu(); break;    
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
@@ -2007,7 +1994,7 @@ void ChargeCurrentLimit(){
       }
     }
     //16A Limit
-    tmp_chargecurrent = 3600 / (bms.getPackVoltage() / 1000) /*PackV*/ * 95 / 10; //3,6kW max, 95% Eff. , factor 10 [ToDo] make conf. + CAN
+    tmp_chargecurrent = 3600 / (round(float(bms.getPackVoltage()) / 1000)) /*PackV*/ * 95 / 10; //3,6kW max, 95% Eff. , factor 10 [ToDo] make conf. + CAN
     if(tmp_chargecurrent < chargecurrent){
       chargecurrent = tmp_chargecurrent;
       constrain(chargecurrent,settings.chargecurrentend,settings.ChargerChargeCurrentMax);
@@ -2100,7 +2087,7 @@ void WDOG_reset(){
 void Dash_update(){
   //power gauge
   int32_t dashpower = 0; //in W
-  dashpower = round((currentact/1000)*(bms.getPackVoltage()/1000));
+  dashpower = round((float(currentact)/1000)*(float(bms.getPackVoltage())/1000));
 
   //temp gauge
   int32_t dashtemp = 0;
@@ -2131,21 +2118,21 @@ void Dash_update(){
   
   Nextion_send("soc.val=", SOC);
   Nextion_send("soc1_gauge.val=", SOC);
-  Nextion_send("ah.val=", int(mampsecond / 3600000));
-  Nextion_send("current.val=", int(currentact / 100));
+  Nextion_send("ah.val=", int(round(float(mampsecond) / 3600000)));
+  Nextion_send("current.val=", int(round(float(currentact) / 100)));
   Nextion_send("power.val=", dashpower);
   Nextion_send("temp.val=", int(bms.getAvgTemperature()));
   Nextion_send("temp1.val=", dashtemp);
   Nextion_send("templow.val=", int(bms.getLowTemperature()));
   Nextion_send("temphigh.val=", int(bms.getHighTemperature()));
-  Nextion_send("volt.val=", int(bms.getPackVoltage() / 100));
+  Nextion_send("volt.val=", int(round(float(bms.getPackVoltage()) / 100)));
   Nextion_send("volt1_gauge.val=", dashvolt);
   Nextion_send("lowcell.val=", int(bms.getLowCellVolt()));
   Nextion_send("highcell.val=", int(bms.getHighCellVolt()));
   Nextion_send("firm.val=", firmver);
   Nextion_send("celldelta.val=", int(bms.getHighCellVolt() - bms.getLowCellVolt()));
   Nextion_send("cellbal.val=", bms.getBalancing());
-  //Nextion_send("debug.val=", uint32_t(mWs / 3600000));
+  Nextion_send("debug.val=", abs(TCAP_Wh));
   Nextion_send("eta.txt=", eta);
   Nextion_send("etad.txt=", eta);
   Nextion_send("click ", "refresh,1"); //use Refresh-Button to Update Values on the Display
@@ -2226,18 +2213,18 @@ void CAN_BMC_send(byte CAN_Nr) //BMC CAN Messages
   MSG.id  = 0x351;
   MSG.len = 8;
   if (storagemode){
-    MSG.buf[0] = lowByte(uint16_t(float(settings.StoreVsetpoint)/100 * settings.Scells));
-    MSG.buf[1] = highByte(uint16_t(float(settings.StoreVsetpoint)/100 * settings.Scells));    
+    MSG.buf[0] = lowByte(uint16_t(round(float(settings.StoreVsetpoint)/100 * settings.Scells)));
+    MSG.buf[1] = highByte(uint16_t(round(float(settings.StoreVsetpoint)/100 * settings.Scells)));    
   }else{
-    MSG.buf[0] = lowByte(uint16_t(float(settings.ChargeVSetpoint)/100 * settings.Scells));
-    MSG.buf[1] = highByte(uint16_t(float(settings.ChargeVSetpoint)/100 * settings.Scells));
+    MSG.buf[0] = lowByte(uint16_t(round(float(settings.ChargeVSetpoint)/100 * settings.Scells)));
+    MSG.buf[1] = highByte(uint16_t(round(float(settings.ChargeVSetpoint)/100 * settings.Scells)));
   }
   MSG.buf[2] = lowByte(chargecurrent);
   MSG.buf[3] = highByte(chargecurrent);
   MSG.buf[4] = lowByte(discurrent);
   MSG.buf[5] = highByte(discurrent);
-  MSG.buf[6] = lowByte(uint16_t(float(settings.UnderVDerateSetpoint)/100 * settings.Scells));
-  MSG.buf[7] = highByte(uint16_t(float(settings.UnderVDerateSetpoint)/100 * settings.Scells));
+  MSG.buf[6] = lowByte(uint16_t(round(float(settings.UnderVDerateSetpoint)/100 * settings.Scells)));
+  MSG.buf[7] = highByte(uint16_t(round(float(settings.UnderVDerateSetpoint)/100 * settings.Scells)));
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
 
@@ -2256,10 +2243,10 @@ void CAN_BMC_send(byte CAN_Nr) //BMC CAN Messages
 
   MSG.id  = 0x356;
   MSG.len = 8;
-  MSG.buf[0] = lowByte(uint16_t(bms.getPackVoltage() / 10));
-  MSG.buf[1] = highByte(uint16_t(bms.getPackVoltage() / 10));
-  MSG.buf[2] = lowByte(int32_t(currentact / 100)); // [ToDo] values > ~6500A will overflow!
-  MSG.buf[3] = highByte(int32_t(currentact / 100));
+  MSG.buf[0] = lowByte(uint16_t(round(float(bms.getPackVoltage()) / 10)));
+  MSG.buf[1] = highByte(uint16_t(round(float(bms.getPackVoltage()) / 10)));
+  MSG.buf[2] = lowByte(int32_t(round(float(currentact) / 100))); // [ToDo] values > ~6500A will overflow!
+  MSG.buf[3] = highByte(int32_t(round(float(currentact) / 100)));
   MSG.buf[4] = lowByte(int16_t(bms.getAvgTemperature() * 10));
   MSG.buf[5] = highByte(int16_t(bms.getAvgTemperature() * 10));
   MSG.buf[6] = 0;
@@ -2388,8 +2375,8 @@ void CAN_Charger_Send(byte CAN_Nr){
       MSG.id  =  0x1806E5F4; //broadcast to all Elcons
       MSG.len = 8;
       MSG.flags.extended = 1;
-      MSG.buf[0] = highByte(uint16_t(float(settings.ChargeVSetpoint) / 1000 * settings.Scells * 10));
-      MSG.buf[1] = lowByte(uint16_t(float(settings.ChargeVSetpoint) / 1000 * settings.Scells  * 10));
+      MSG.buf[0] = highByte(uint16_t(round(float(settings.ChargeVSetpoint) / 1000 * settings.Scells * 10)));
+      MSG.buf[1] = lowByte(uint16_t(round(float(settings.ChargeVSetpoint) / 1000 * settings.Scells  * 10)));
       MSG.buf[2] = highByte(chargecurrent);
       MSG.buf[3] = lowByte(chargecurrent);
       MSG.buf[4] = 0x00;
@@ -2408,8 +2395,8 @@ void CAN_Charger_Send(byte CAN_Nr){
       MSG.buf[0] = 0x01;
       MSG.buf[1] = lowByte(1000);
       MSG.buf[2] = highByte(1000);
-      MSG.buf[3] = lowByte(uint16_t(float(settings.ChargeVSetpoint) / 1000 * settings.Scells * 10));
-      MSG.buf[4] = highByte(uint16_t(float(settings.ChargeVSetpoint) / 1000 * settings.Scells * 10));
+      MSG.buf[3] = lowByte(uint16_t(round(float(settings.ChargeVSetpoint) / 1000 * settings.Scells * 10)));
+      MSG.buf[4] = highByte(uint16_t(round(float(settings.ChargeVSetpoint) / 1000 * settings.Scells * 10)));
       MSG.buf[5] = lowByte(chargecurrent);
       MSG.buf[6] = highByte(chargecurrent);
 
@@ -2431,8 +2418,8 @@ void CAN_Charger_Send(byte CAN_Nr){
       }
       MSG.buf[5] = highByte(chargecurrent);
       MSG.buf[6] = lowByte(chargecurrent);
-      MSG.buf[3] = highByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerendbulk) / 1000) * 10));
-      MSG.buf[4] = lowByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerendbulk) / 1000) * 10));
+      MSG.buf[3] = highByte(uint16_t(round(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerendbulk) / 1000) * 10)));
+      MSG.buf[4] = lowByte(uint16_t(round(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerendbulk) / 1000) * 10)));
       if(CAN_Nr & 1){can1.write(MSG);}
       if(CAN_Nr & 2){can2.write(MSG);}
 
@@ -2448,8 +2435,8 @@ void CAN_Charger_Send(byte CAN_Nr){
         MSG.buf[1] = highByte(maxac2 * 10);
         MSG.buf[2] = lowByte(maxac2 * 10);
       }
-      MSG.buf[3] = highByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerend) / 1000) * 10));
-      MSG.buf[4] = lowByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerend) / 1000) * 10));
+      MSG.buf[3] = highByte(uint16_t(round(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerend) / 1000) * 10)));
+      MSG.buf[4] = lowByte(uint16_t(round(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerend) / 1000) * 10)));
       MSG.buf[5] = highByte(chargecurrent);
       MSG.buf[6] = lowByte(chargecurrent);
       if(CAN_Nr & 1){can1.write(MSG);}
@@ -2469,8 +2456,8 @@ void CAN_Charger_Send(byte CAN_Nr){
       if ((chargecurrent * 2) > 255){MSG.buf[1] = 255;}
       else{MSG.buf[1] = (chargecurrent * 2);}
       if ((float(settings.ChargeVSetpoint)/1000 * settings.Scells) > 200){
-        MSG.buf[2] = highByte(uint16_t((float(settings.ChargeVSetpoint) / 1000 * settings.Scells ) * 2));
-        MSG.buf[3] = lowByte(uint16_t((float(settings.ChargeVSetpoint) / 1000 * settings.Scells ) * 2));
+        MSG.buf[2] = highByte(uint16_t(round((float(settings.ChargeVSetpoint) / 1000 * settings.Scells ) * 2)));
+        MSG.buf[3] = lowByte(uint16_t(round((float(settings.ChargeVSetpoint) / 1000 * settings.Scells ) * 2)));
       }else{
         MSG.buf[2] = highByte(400);
         MSG.buf[3] = lowByte(400);
@@ -2485,7 +2472,7 @@ void CAN_Charger_Send(byte CAN_Nr){
       MSG.buf[0] = 0x00;
       MSG.buf[1] = 0xDC;
       if ((float(settings.ChargeVSetpoint/1000) * settings.Scells) > 200){
-        MSG.buf[2] = highByte(uint16_t((float(settings.ChargeVSetpoint) / 1000 * settings.Scells ) * 10));
+        MSG.buf[2] = highByte(uint16_t(round((float(settings.ChargeVSetpoint) / 1000 * settings.Scells ) * 10)));
         MSG.buf[3] = lowByte(uint16_t((float(settings.ChargeVSetpoint) / 1000 * settings.Scells ) * 10));
       }else{
         MSG.buf[2] = highByte( 400);
@@ -2493,8 +2480,8 @@ void CAN_Charger_Send(byte CAN_Nr){
       }
       MSG.buf[4] = 0x00;
       if ((float(settings.ChargeVSetpoint/1000) * settings.Scells) * chargecurrent < 3300){
-        MSG.buf[5] = highByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) * chargecurrent) / 240));
-        MSG.buf[6] = highByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) * chargecurrent) / 240));
+        MSG.buf[5] = highByte(uint16_t(round(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) * chargecurrent) / 240)));
+        MSG.buf[6] = highByte(uint16_t(round(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) * chargecurrent) / 240)));
       }else{  //15 A AC limit
         MSG.buf[5] = 0x00;
         MSG.buf[6] = 0x96;
@@ -2509,7 +2496,7 @@ void CAN_Charger_Send(byte CAN_Nr){
 void CAN_MC_read(CAN_message_t MSG){
   uint32_t tmp_id = 0;
   if(settings.mctype == Curtis){
-    tmp_id = CO_Handle(MSG);
+    //tmp_id = CO_Handle(MSG);
     if (tmp_id){
         //CO_Send_SDO(tmp_id,2,1,0x1005,0x00);
         // 1001 Errors
@@ -2533,173 +2520,4 @@ void CAN_Debug_OUT(){
     }
   }
   SERIALCONSOLE.println();
-}
-
-//
-//CANOpen implementation
-//
-
-// NMT messages to control CANOpen nodes.
-bool CO_NMT(uint32_t CO_Target_ID, uint8_t CO_Target_State){
-  outMsg.id = 0x000;
-  outMsg.len = 2; //1Byte requested State, 1Byte addressed Node
-  if (CO_Target_State & 0x83){ //check for valid State values
-    //0x01 Start Node, 0x02 Stop Node, 0x80 Pre-Operational, 0x81 reset application, 0x82 reset communication
-    outMsg.buf[0] = CO_Target_State;
-    outMsg.buf[1] = CO_Target_ID;
-    can1.write(outMsg);
-    return 1;
-  }else{return 0;}
-}
-
-// SYNC message to sync devices & trigger PDOs from servers
-void CO_SYNC(){
-  CAN_message_t SyncMSG;
-  if(settings.mctype == Curtis){
-    SyncMSG.id = 0x80;
-    SyncMSG.len = 0;
-    can1.write(SyncMSG);
-  //  CO_PDO1_send(0x26);
-  //  CO_PDO2_send(0x26);
-    //if(debug_CAN1){CAN_Debug_OUT();}
-  }
-}
-
-void CO_PDO1_send(uint32_t CO_Target_ID){
-  outMsg.id = 0x200 + CO_Target_ID;
-  outMsg.len = 8;
-  //msg.rtr = 1;
-  outMsg.buf[0] = 0x00;
-  outMsg.buf[1] = 0x00;
-  outMsg.buf[2] = 0x00;
-  outMsg.buf[3] = 0x00;
-  outMsg.buf[4] = 0x00;
-  outMsg.buf[5] = 0x00;
-  outMsg.buf[6] = 0x00;
-  outMsg.buf[7] = 0x00;
-  can1.write(outMsg);
-  if(debug_CAN1){CAN_Debug_OUT();}
-}
-
-void CO_PDO2_send(uint32_t CO_Target_ID){
-  outMsg.id = 0x300 + CO_Target_ID;
-  outMsg.len = 8;
-  //msg.rtr = 1;
-  outMsg.buf[0] = 0x00;
-  outMsg.buf[1] = 0x00;
-  outMsg.buf[2] = 0x00;
-  outMsg.buf[3] = 0x00;
-  outMsg.buf[4] = 0x00;
-  outMsg.buf[5] = 0x00;
-  outMsg.buf[6] = 0x00;
-  outMsg.buf[7] = 0x00;
-  can1.write(outMsg);
-  if(debug_CAN1){CAN_Debug_OUT();}
-
-}
-
-void CO_SDO_send_test(uint32_t CO_Target_ID){
-  
-  outMsg.buf[4] = 0x00;
-  outMsg.buf[5] = 0x00;
-  outMsg.buf[6] = 0x00;
-  outMsg.buf[7] = 0x00;
-  /*
-  CO_Send_SDO(0x26,1,1,0x1800,0x02,1);
-  */
-  CO_Send_SDO(CO_Target_ID,1,0,0x1800,0x02,1);
- 
-  //CO_PDO1_send(CO_Target_ID);
-  //CO_PDO2_send(CO_Target_ID);
-  //CO_Send_SDO(CO_Target_ID,2,1,0x1400,0x00);
-}
-
-/*
-Send SDOs to request or write single Data from / to the Object Dictionary
-CO_Target_ID: NodeId (0x00-0xFF)
-CCS: 1 - write, 2 - read
-expedited: 1 - send/receive in one Frame, 0 - segmented
-index: OD index
-subindex: OD subindex
-datasize: how many Bytes to write/send (0 - 4)
-*/
-void CO_Send_SDO(uint32_t CO_Target_ID, uint8_t CCS, uint8_t expedited, uint16_t index, uint8_t subindex, uint8_t datasize){
-  //[ToDo] Funktionsaufruf um Übergabe für Byte 4-7 erweitern?
-  uint8_t command_byte = 0;
-  outMsg.id = 0x600 + CO_Target_ID; //COB-ID
-  outMsg.len = 8;
-
-  if(datasize > 0 && datasize < 5){
-    //Datasize: 1Byte = 11b, 2Byte = 10b, 3Byte = 01b, 4Byte = 00b
-    datasize = 4 - datasize;
-    command_byte |= datasize << 2; //set datasize
-    command_byte |= 1; //set datasize shown
-  }else{datasize = 0;}
-
-  if (CCS == 1 || CCS == 2){
-    //1 write,Download 2 read/upload
-    command_byte |= CCS << 5;
-  } else {return;}
-  
-  if (expedited){
-    //activate single-frame transer
-    command_byte |= 2;
-  }
-  outMsg.buf[0] = command_byte;
-  outMsg.buf[1] = lowByte(index);
-  outMsg.buf[2] = highByte(index);
-  outMsg.buf[3] = subindex;
-  outMsg.buf[4] = 0x00; // lowest Data, first Byte
-  outMsg.buf[5] = 0x00;
-  outMsg.buf[6] = 0x00;
-  outMsg.buf[7] = 0x00; // highest Data, Last byte
-  can1.write(outMsg);
-  if(debug_CAN1){CAN_Debug_OUT();}
-}
-
-// Handle incomming CANOpen messages
-// returns sender CAN-ID
-uint32_t CO_Handle(CAN_message_t MSG){
-  // Tx Read Data Server -> Client
-  // Rx write Data Client -> Server
-
-  if (MSG.id & 0x580){
-    //SDO Tx: eg. reply to SDO Rx
-  }
-  if (MSG.id & 0x600){
-    //SDO Rx: see CO_Send_SDO
-  }
-  if (MSG.id & 0x180){
-    //PDO1 Tx
-  }
-  if (MSG.id & 0x200){
-    //PDO1 Rx
-  }
-  if (MSG.id & 0x280){
-    //PDO2 Tx
-  }  
-  if (MSG.id & 0x300){
-    //PDO2 Rx
-  }
-  if (MSG.id & 0x380){
-    //PDO3 Tx
-  }
-  if (MSG.id & 0x400){
-    //PDO3 Rx
-  }      
-  if (MSG.id & 0x480){
-    //PDO4 Tx
-  }
-  if (MSG.id & 0x500){
-    //PDO4 Rx
-  }    
-  if (MSG.id & 0x700){
-    //NMT Heartbeats / Status
-    if(MSG.buf[0] == 0x00){}//boot: just wait
-    if(MSG.buf[0] == 0x04){CO_NMT(0x00, co_state_preop);}//stopped: bring into pre-operational
-    if(MSG.buf[0] == 0x05){return (MSG.id & ~0x700);}//operational: [ToDo] Do nothing? Send SYNC/rPDO in interval?
-    if(MSG.buf[0] == 0x7f){CO_NMT(0x00, co_NMT_operational);}//pre-operational: bring into operational
-  }  
-  
-  return 0;
 }
