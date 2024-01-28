@@ -12,6 +12,7 @@
 #include "BMSModule.h"
 #include <FlexCAN_T4.h>
 #include "CAN_Struct.h"
+#include "CRC8.h"
 
 class BMSManager{
 public:
@@ -25,11 +26,11 @@ public:
     void printPackDetails();
     uint16_t getHighCellVolt();
     uint16_t getLowCellVolt();
-    uint16_t getHighTemperature();
-    uint16_t getLowTemperature();
+    int16_t getHighTemperature();
+    int16_t getLowTemperature();
     uint32_t getPackVoltage();
     uint16_t getAvgCellVolt();
-    uint16_t getAvgTemperature();
+    int16_t getAvgTemperature();
     void clearModules();
     byte getBalancingCells(byte module_id); //move to module?
     uint16_t getBalancing(); //returns number of currently balancing cells
@@ -58,6 +59,7 @@ private:
     void VW_get_CMU_ID(CAN_message_t &msg,byte &CMU,byte &Id);
     void BMW_get_CMU_ID(CAN_message_t &msg,byte &CMU,byte &Id);
     CAN_Struct VW_Balancing();
+    CAN_Struct BMW_Balancing();
     void Tesla_Balancing();
     void Tesla_renumberModulesIDs(); // reset and re enumerate all Modules
     void Tesla_setupModules(); // init Modules
@@ -68,4 +70,5 @@ private:
     void Tesla_resetModules();
     CAN_Struct clearCANStruct(); // returns an empty initialized CAN_Struct
     void UpdateValues();
+    CRC8 crc8;
 };

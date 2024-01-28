@@ -91,14 +91,14 @@ CAN_Struct BMSManager::poll(){
     moduleReadCnt = 0;
     switch (BMSType){
         case BMS_VW_eGolf: 
-        case BMS_VW_MEB: {
-        
+        case BMS_VW_MEB: 
+        {        
             msg = Balancing(0,false); // deactivate balancing for measurement first
-            //find first unused ID.
+            
             //Attention: CAN_Struct has to be big enough to hold all messages!
             byte msgNr;
             for(msgNr = 0; msgNr < CAN_Struct_size; msgNr++){
-                if(!msg.Frame[msgNr].id) break;
+                if(!msg.Frame[msgNr].id) break; //find first unused ID.
             }
             uint16_t controlid = 0xBA;
             msg.Frame[msgNr].id = controlid;
@@ -122,6 +122,26 @@ CAN_Struct BMSManager::poll(){
             msg.Frame[msgNr+1].buf[5] = 0x00;
             msg.Frame[msgNr+1].buf[6] = 0x00;
             msg.Frame[msgNr+1].buf[7] = 0x30;
+        }
+        break;
+
+        case BMS_BMW_I3:
+        {
+            msg = Balancing(0,false); // deactivate balancing for measurement first
+
+            const uint8_t finalxor [12] = {0xCF, 0xF5, 0xBB, 0x81, 0x27, 0x1D, 0x53, 0x69, 0x02, 0x38, 0x76, 0x4C};
+            byte msgNr;
+            for(msgNr = 0; msgNr < CAN_Struct_size; msgNr++){
+                if(!msg.Frame[msgNr].id) break; //find first unused ID.
+            }            
+            // CRC
+            unsigned char canmes [11];
+            int meslen = msg.Frame[msgNr].len + 1; //remove one for crc and add two for id bytes
+            canmes [1] = msg.Frame[msgNr].id;
+            canmes [0] = msg.Frame[msgNr].id >> 8;
+
+            for (int i = 0; i < (msg.Frame[msgNr].len - 1); i++){canmes[i + 2] = msg.Frame[msgNr].buf[i];}
+            //crc8.get_crc8(canmes, meslen, finalxor[id]);
         }
         break;
 
@@ -323,11 +343,11 @@ void BMSManager::BMW_get_CMU_ID(CAN_message_t &msg, byte &CMU, byte &Id){
 //void printAllCSV(unsigned long timestamp, float current, int SOC){}
 uint16_t BMSManager::getHighCellVolt(){return HighCellVolt;}
 uint16_t BMSManager::getLowCellVolt(){return LowCellVolt;}
-uint16_t BMSManager::getHighTemperature(){return highTemp;}
-uint16_t BMSManager::getLowTemperature(){return lowTemp;}
+int16_t BMSManager::getHighTemperature(){return highTemp;}
+int16_t BMSManager::getLowTemperature(){return lowTemp;}
 uint32_t BMSManager::getPackVoltage(){return packVolt;}
 uint16_t BMSManager::getAvgCellVolt(){return AvgCellVolt;}
-uint16_t BMSManager::getAvgTemperature(){return AvgTemp;}
+int16_t BMSManager::getAvgTemperature(){return AvgTemp;}
 
 void BMSManager::clearModules(){
     for (int moduleNr = 1; moduleNr <= MAX_MODULE_ADDR; moduleNr++){
@@ -407,6 +427,9 @@ CAN_Struct BMSManager::Balancing(uint16_t balhys, bool active){
         case BMS_VW_eGolf:
         case BMS_VW_MEB:
             BalanceMatrix = VW_Balancing();
+        break;
+        case BMS_BMW_I3:
+        break;
         case BMS_Tesla:
             Tesla_Balancing();
         break;
@@ -510,6 +533,14 @@ CAN_Struct BMSManager::VW_Balancing(){
         }
     }        
     return BalanceMatrix;
+}
+
+CAN_Struct BMSManager::BMW_Balancing(){
+    CAN_Struct BalanceMatrix;
+    BalanceMatrix = clearCANStruct();
+    uint8_t balance_Bitmask = 0; //bit 0 - 5 are to activate cell balancing 1-6 etc.
+
+
 }
 
 void BMSManager::Tesla_renumberModulesIDs(){

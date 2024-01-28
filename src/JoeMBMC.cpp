@@ -29,7 +29,6 @@
 #include <ADC.h> //https://github.com/pedvide/ADC
 #include <EEPROM.h>
 #include <FlexCAN_T4.h> //https://github.com/tonton81/FlexCAN_T4
-//#include <SPI.h>
 #include <Filters.h>//https://github.com/JonHub/Filters
 #include <Watchdog_t4.h>
 
@@ -42,14 +41,14 @@
 */
 
 /////Version Identifier/////////
-int16_t firmver = 240122;
+uint32_t firmver = 240122;
 
 //Tesla_BMSModuleManager bms;
 BMSManager bms;
 EEPROMSettings settings;
 
 //Curent filter//
-float filterFrequency = 5.0 ;
+byte filterFrequency = 5 ;
 FilterOnePole lowpassFilter( LOWPASS, filterFrequency );
 
 //BMC wiring//
@@ -146,7 +145,7 @@ uint16_t pwmfreq = 18000;//pwm frequency
 
 uint16_t chargecurrent = 0; // in 0,1A
 uint16_t chargecurrentlast = 0; // in 0,1A
-float chargecurrentFactor = 0.0f; //correction factor, when using multiple chargers
+//float chargecurrentFactor = 0.0f; //correction factor, when using multiple chargers
 uint16_t discurrent = 0;
 
 /*
@@ -158,7 +157,7 @@ uint16_t discurrent = 0;
 [2] (7/6) Internal Failure     (5/4) battery short circuit (3/2) contactor problem      (1/0) high current charge
 [3] (1/0) Cell Imbalance
 */
-unsigned char alarm[4],warning[4] = {0, 0, 0, 0};
+byte alarm[4],warning[4] = {0, 0, 0, 0};
 
 uint32_t warning_timer = 0;
 
@@ -169,12 +168,12 @@ int32_t ISAVoltage1, ISAVoltage2, ISAVoltage3 = 0; //mV only with ISAscale senso
 
 //variables for current/capacity calulation
 uint16_t Sen_AnalogueRawValue;
-float currentact = 0.0f; //mA
-float currentlast = 0.0f; 
-float currentavg = 0.0f; //mA
-float currentavg_array[60];
+uint32_t currentact = 0; // mA
+uint32_t currentlast = 0; // mA
+uint32_t currentavg = 0; // mA
+uint32_t currentavg_array[60];
 byte currentavg_counter = 0;
-float RawCur;
+uint32_t RawCur;
 int32_t mampsecond = 0; // Range 0 = full to settings.cap * -1 = empty
 int32_t mampsecondTimer = 0;
 int64_t mWs = 0; // Capacity in mWs (see mampsecond)
@@ -182,7 +181,7 @@ int32_t mWsTimer = 0;
 uint32_t lastTime;
 uint32_t looptime, looptime1, UnderTime, cleartime, baltimer = 0; //ms
 byte Sen_Analogue_Num = 1; // 1 = Sensor 1; 2 = Sensor 2
-int16_t TCAP = 0; //Temperature corrected Capacity in Ah including settings.Pstrings! settings.CAP * settings.Pstrings * -1 + (CAP_Temp_alteration() / 3600000);
+int16_t TCAP = 0; //Temperature corrected Capacity in Ah including settings.Pstrings!
 int16_t TCAP_Wh = 0;
 //Variables for SOC calc
 byte SOC = 100; //State of Charge
@@ -193,8 +192,8 @@ byte maxac1 = 16; //Shore power 16A per charger
 byte maxac2 = 10; //Generator Charging
 const int16_t chargerid1 = 0x618; //bulk chargers (brusa)
 const int16_t chargerid2 = 0x638; //finishing charger (brusa)
-float chargerendbulk = 0; //V before Charge Voltage to turn off the bulk charger/s
-float chargerend = 0; //V before Charge Voltage to turn off the finishing charger/s
+uint16_t chargerendbulk = 0; //mV before Charge Voltage to turn off the bulk charger/s
+uint16_t chargerend = 0; //mV before Charge Voltage to turn off the finishing charger/s
 
 //variables
 byte output_debug_counter = 0;
@@ -348,11 +347,11 @@ void loadSettings(){
   settings.mctype = 0; // type of Motor Controller
   settings.SerialCan = 0; //Serial canbus or display: 0-display 1-canbus expansion 2-Bluetooth App
   settings.error_delay = 10000; //time before Error_Stat shuts everything off
-  settings.Temp_Cap_Map[0][0] = -20;
-  settings.Temp_Cap_Map[0][1] = -10;
+  settings.Temp_Cap_Map[0][0] = -200;
+  settings.Temp_Cap_Map[0][1] = -100;
   settings.Temp_Cap_Map[0][2] = 0;
-  settings.Temp_Cap_Map[0][3] = 25;
-  settings.Temp_Cap_Map[0][4] = 40;
+  settings.Temp_Cap_Map[0][3] = 250;
+  settings.Temp_Cap_Map[0][4] = 400;
   settings.Temp_Cap_Map[1][0] = 38;
   settings.Temp_Cap_Map[1][1] = 69;
   settings.Temp_Cap_Map[1][2] = 78;
@@ -473,8 +472,8 @@ void loop(){
   if (millis() - looptime > 500){ // 0.5s loop
     looptime = millis();
 
-    TCAP = settings.CAP * settings.Pstrings * -1 * CAP_Temp_alteration();
-    TCAP_Wh = settings.CAP_Wh * -1 * CAP_Temp_alteration(); // [ToDo]Pstrings?
+    TCAP = settings.Pstrings * CAP_Temp_alteration() * -1;
+    //TCAP_Wh = settings.CAP_Wh * CAP_Temp_alteration() * -1; // [ToDo]
 
     //copy Ampseconds from Timer Funktion
     noInterrupts();
@@ -826,13 +825,13 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.print("(");
   SERIALCONSOLE.print(float(chargecurrent) / 10);
   SERIALCONSOLE.print(") A, Factor: ");
-  SERIALCONSOLE.print(chargecurrentFactor);
+  //SERIALCONSOLE.print(chargecurrentFactor);
   SERIALCONSOLE.print(" | DisCharge Current Limit : ");
   SERIALCONSOLE.print(discurrent / 10);
   SERIALCONSOLE.print("A");
   SERIALCONSOLE.println();
   SERIALCONSOLE.print("Vpack: ");
-  SERIALCONSOLE.print(float(bms.getPackVoltage())/1000,2);
+  SERIALCONSOLE.print(float(bms.getPackVoltage()) / 1000,2);
   SERIALCONSOLE.print("V| Vlow: ");
   SERIALCONSOLE.print(bms.getLowCellVolt());
   SERIALCONSOLE.print("mV| Vhigh: ");
@@ -911,7 +910,7 @@ void SERIALCONSOLEprint(){
 //called by Timer
 void mAmpsec_calc(){ 
   uint32_t nowTime = millis();
-  u_int16_t tmpTime = 0;
+  uint32_t tmpTime = 0;
   int32_t tmpmampsecond = 0;
   if((nowTime - lastTime) < 0){tmpTime = 4294967295 - lastTime + nowTime;} // Catch millis() overflow [ToTest]
   else{tmpTime = nowTime - lastTime;}
@@ -922,8 +921,8 @@ void mAmpsec_calc(){
   lastTime = millis();  
 }
 
-float SEN_AnalogueRead(float tmp_currrentlast){
-  float tmp_current = 0;
+uint32_t SEN_AnalogueRead(int32_t tmp_currrentlast){
+  int32_t tmp_current = 0;
   switch (settings.cursens){
     case Sen_Analoguesing:
       Sen_Analogue_Num = 1;
@@ -962,7 +961,7 @@ float SEN_AnalogueRead(float tmp_currrentlast){
 
 } 
 
-float CAN_SEN_read(CAN_message_t MSG){
+uint32_t CAN_SEN_read(CAN_message_t MSG){
   int32_t CANmilliamps = 0;
   switch (MSG.id){
     //LEM CAB
@@ -1048,7 +1047,7 @@ void Currentavg_Calc(){
   currentavg_array[currentavg_counter] = currentact;
   currentavg_counter++;
   if(currentavg_counter > 59){currentavg_counter = 0;}
-  float current_temp = 0;
+  uint32_t current_temp = 0;
   for (byte i=0; i<60; i++){
     current_temp += currentavg_array[i];
   }
@@ -1064,11 +1063,11 @@ void Current_debug(){
       else
       {SERIALCONSOLE.print("Single In: ");}
       SERIALCONSOLE.print("Value ADC0: ");
-      SERIALCONSOLE.print(Sen_AnalogueRawValue* 3300 / adc->adc0->getMaxValue()); //- settings.offset1)
+      SERIALCONSOLE.print(Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue()); //- settings.offset1)
       SERIALCONSOLE.print(" ");
       SERIALCONSOLE.print(settings.offset1);
       SERIALCONSOLE.print("  ");
-      SERIALCONSOLE.print(int16_t(Sen_AnalogueRawValue* 3300 / adc->adc0->getMaxValue()) - settings.offset1);
+      SERIALCONSOLE.print(int16_t(Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue()) - settings.offset1);
       SERIALCONSOLE.print("  ");
       SERIALCONSOLE.print(RawCur);
       SERIALCONSOLE.print(" mA");
@@ -1077,11 +1076,11 @@ void Current_debug(){
       SERIALCONSOLE.println();
       SERIALCONSOLE.print("High Range: ");
       SERIALCONSOLE.print("Value ADC0: ");
-      SERIALCONSOLE.print(Sen_AnalogueRawValue* 3300 / adc->adc0->getMaxValue()); //- settings.offset2)
+      SERIALCONSOLE.print(Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue()); //- settings.offset2)
       SERIALCONSOLE.print("  ");
       SERIALCONSOLE.print(settings.offset2);
       SERIALCONSOLE.print("  ");
-      SERIALCONSOLE.print((float(Sen_AnalogueRawValue* 3300 / adc->adc0->getMaxValue()) - settings.offset2));
+      SERIALCONSOLE.print((float(Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue()) - settings.offset2));
       SERIALCONSOLE.print("  ");
       SERIALCONSOLE.print(RawCur);
       SERIALCONSOLE.print("mA");
@@ -1161,31 +1160,30 @@ void SOC_charged(){
 }
 
 /*
-  Returns capacity in mAs to substract, corrected by temperature factor.
+  Returns temperature corrected capacity in Ah.
   Uses:
     bms.getLowTemperature()
     settings.Temp_Cap_Map[x][x]
 */
-//int32_t CAP_Temp_alteration(){
-float CAP_Temp_alteration(){
-  float tmp_map = 0;
+uint32_t CAP_Temp_alteration(){
+  uint32_t tmp_map = 0;
 
   //temp below lowest Setpoint
-  if (bms.getLowTemperature() < float(settings.Temp_Cap_Map[0][0])){ 
-    return settings.Temp_Cap_Map[1][0] / 100;
+  if (bms.getLowTemperature() < settings.Temp_Cap_Map[0][0]){ 
+    return settings.CAP * (settings.Temp_Cap_Map[1][0] / 100);
   }
   //temp above highest setpoint.
-  if(bms.getLowTemperature() >= float(settings.Temp_Cap_Map[0][4])) {
-    return float(settings.Temp_Cap_Map[1][4]) / 100;
+  if(bms.getLowTemperature() >= settings.Temp_Cap_Map[0][4]) {
+    return settings.CAP * (settings.Temp_Cap_Map[1][4] / 100);
   }
   //everything in between
   for (byte i = 1; i < 4; i++){
-    if (bms.getLowTemperature() >= float(settings.Temp_Cap_Map[0][i]) && bms.getLowTemperature() < float(settings.Temp_Cap_Map[0][i+1])){
+    if (bms.getLowTemperature() >= settings.Temp_Cap_Map[0][i] && bms.getLowTemperature() < settings.Temp_Cap_Map[0][i+1]){
       tmp_map = map(bms.getLowTemperature(), settings.Temp_Cap_Map[0][i], settings.Temp_Cap_Map[0][i+1],settings.Temp_Cap_Map[1][i],settings.Temp_Cap_Map[1][i+1]);
-      return tmp_map / 100;
+      return settings.CAP * (tmp_map / 100);
     }  
   }
-  return 1; // failsafe
+  return settings.CAP; // failsafe
 }
 
 void CAP_recalc(){
@@ -1483,7 +1481,7 @@ void Menu(){
         case 8: settings.UnderTDerateSetpoint = menu_option_val * 10; Menu(); break;    
         case 9: settings.balanceVoltage = menu_option_val; Menu(); break;   
         case 10: settings.balanceHyst = menu_option_val; Menu(); break;   
-        case 11: settings.PackDisCurrentMax = menu_option_val*10; Menu(); break;
+        case 11: settings.PackDisCurrentMax = menu_option_val * 10; Menu(); break;
         case 12: settings.designCAP = menu_option_val; Menu(); break;
         case 13: settings.CAP = menu_option_val; Menu(); break;
         case 14: settings.Pstrings = menu_option_val; Menu(); break;     
@@ -1493,15 +1491,15 @@ void Menu(){
         case 18: settings.socvolt[2] = menu_option_val; Menu(); break;                                                               
         case 19: settings.socvolt[3] = menu_option_val; Menu(); break;  
         case 20: settings.StoreVsetpoint = menu_option_val; Menu(); break;  
-        case 21: settings.Temp_Cap_Map[0][0] = menu_option_val; Menu(); break;
+        case 21: settings.Temp_Cap_Map[0][0] = menu_option_val * 10; Menu(); break;
         case 22: settings.Temp_Cap_Map[1][0] = menu_option_val; Menu(); break;
-        case 23: settings.Temp_Cap_Map[0][1] = menu_option_val; Menu(); break;
+        case 23: settings.Temp_Cap_Map[0][1] = menu_option_val * 10; Menu(); break;
         case 24: settings.Temp_Cap_Map[1][1] = menu_option_val; Menu(); break;
-        case 25: settings.Temp_Cap_Map[0][2] = menu_option_val; Menu(); break;
+        case 25: settings.Temp_Cap_Map[0][2] = menu_option_val * 10; Menu(); break;
         case 26: settings.Temp_Cap_Map[1][2] = menu_option_val; Menu(); break;
-        case 27: settings.Temp_Cap_Map[0][3] = menu_option_val; Menu(); break;
+        case 27: settings.Temp_Cap_Map[0][3] = menu_option_val * 10; Menu(); break;
         case 28: settings.Temp_Cap_Map[1][3] = menu_option_val; Menu(); break;
-        case 29: settings.Temp_Cap_Map[0][4] = menu_option_val; Menu(); break;
+        case 29: settings.Temp_Cap_Map[0][4] = menu_option_val * 10; Menu(); break;
         case 30: settings.Temp_Cap_Map[1][4] = menu_option_val; Menu(); break;
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
@@ -1563,7 +1561,7 @@ void Menu(){
             SERIALCONSOLE.print("T");
             SERIALCONSOLE.print(i+1);
             SERIALCONSOLE.print("(°C): ");
-            SERIALCONSOLE.println(settings.Temp_Cap_Map[0][i]);
+            SERIALCONSOLE.println(float(settings.Temp_Cap_Map[0][i])/10 , 1);
 
             SERIALCONSOLE.print("["+String(22+y)+"]");
             SERIALCONSOLE.print(" ");
@@ -1991,12 +1989,6 @@ int16_t pgnFromCANId(int16_t canId){ //Parameter Group Number
 }
 
 void ChargeCurrentLimit(){
-  //[debug]
-  /*
-  float CellV = 4.13;
-  float PackV = CellV * settings.Scells;
-  */
-
   ///Start at no derating///
   chargecurrent = settings.ChargerChargeCurrentMax;
   u_int16_t EndCurrent = settings.chargecurrentend / settings.nchargers;
@@ -2015,7 +2007,7 @@ void ChargeCurrentLimit(){
     }    
     //Voltage based
     if (storagemode){
-      float upperStoreVLimit = settings.StoreVsetpoint - settings.ChargeHys/2;
+      uint16_t upperStoreVLimit = settings.StoreVsetpoint - settings.ChargeHys/2;
       if (bms.getHighCellVolt() > upperStoreVLimit){
         tmp_chargecurrent = map(bms.getHighCellVolt(), upperStoreVLimit, settings.StoreVsetpoint, settings.ChargerChargeCurrentMax, EndCurrent);
         if(tmp_chargecurrent < chargecurrent){
@@ -2024,7 +2016,7 @@ void ChargeCurrentLimit(){
         }
       }
     } else { 
-      float upperVLimit = settings.ChargeVSetpoint - settings.ChargeHys/2;
+      uint16_t upperVLimit = settings.ChargeVSetpoint - settings.ChargeHys/2;
       if (bms.getHighCellVolt() /*CellV*/ > upperVLimit){
         tmp_chargecurrent = map(bms.getHighCellVolt() /*CellV*/, upperVLimit, settings.ChargeVSetpoint, settings.ChargerChargeCurrentMax, EndCurrent);
         if(tmp_chargecurrent < chargecurrent){
@@ -2049,7 +2041,7 @@ void ChargeCurrentLimit(){
 
   //[ToDo] implement feedback loop
   //multiply with calculated current
-  chargecurrentFactor = chargecurrent / (currentact / 100);
+  //chargecurrentFactor = chargecurrent / (currentact / 100);
 
   constrain(chargecurrent,0,settings.ChargerChargeCurrentMax); //[ToTest]
   constrain(chargecurrent,0,settings.PackChargeCurrentMax / settings.nchargers); //[ToTest]
@@ -2285,7 +2277,7 @@ void CAN_BMC_send(byte CAN_Nr) //BMC CAN Messages
   MSG.len = 8;
   MSG.buf[0] = lowByte(uint16_t(bms.getPackVoltage() / 10));
   MSG.buf[1] = highByte(uint16_t(bms.getPackVoltage() / 10));
-  MSG.buf[2] = lowByte(int32_t(currentact / 100));
+  MSG.buf[2] = lowByte(int32_t(currentact / 100)); // [ToDo] values > ~6500A will overflow!
   MSG.buf[3] = highByte(int32_t(currentact / 100));
   MSG.buf[4] = lowByte(int16_t(bms.getAvgTemperature() * 10));
   MSG.buf[5] = highByte(int16_t(bms.getAvgTemperature() * 10));
@@ -2458,8 +2450,8 @@ void CAN_Charger_Send(byte CAN_Nr){
       }
       MSG.buf[5] = highByte(chargecurrent);
       MSG.buf[6] = lowByte(chargecurrent);
-      MSG.buf[3] = highByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - chargerendbulk) * 10));
-      MSG.buf[4] = lowByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - chargerendbulk) * 10));
+      MSG.buf[3] = highByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerendbulk) / 1000) * 10));
+      MSG.buf[4] = lowByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerendbulk) / 1000) * 10));
       if(CAN_Nr & 1){can1.write(MSG);}
       if(CAN_Nr & 2){can2.write(MSG);}
 
@@ -2475,8 +2467,8 @@ void CAN_Charger_Send(byte CAN_Nr){
         MSG.buf[1] = highByte(maxac2 * 10);
         MSG.buf[2] = lowByte(maxac2 * 10);
       }
-      MSG.buf[3] = highByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - chargerend) * 10));
-      MSG.buf[4] = lowByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - chargerend) * 10));
+      MSG.buf[3] = highByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerend) / 1000) * 10));
+      MSG.buf[4] = lowByte(uint16_t(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerend) / 1000) * 10));
       MSG.buf[5] = highByte(chargecurrent);
       MSG.buf[6] = lowByte(chargecurrent);
       if(CAN_Nr & 1){can1.write(MSG);}
@@ -2495,7 +2487,7 @@ void CAN_Charger_Send(byte CAN_Nr){
       MSG.buf[0] = 0x40; //fixed
       if ((chargecurrent * 2) > 255){MSG.buf[1] = 255;}
       else{MSG.buf[1] = (chargecurrent * 2);}
-      if ((float(settings.ChargeVSetpoint/1000) * settings.Scells) > 200){
+      if ((float(settings.ChargeVSetpoint)/1000 * settings.Scells) > 200){
         MSG.buf[2] = highByte(uint16_t((float(settings.ChargeVSetpoint) / 1000 * settings.Scells ) * 2));
         MSG.buf[3] = lowByte(uint16_t((float(settings.ChargeVSetpoint) / 1000 * settings.Scells ) * 2));
       }else{

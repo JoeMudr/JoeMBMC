@@ -66,44 +66,44 @@ typedef struct {
   BMS_t BMSType; // see BMS_Type above
   uint16_t OverVSetpoint; // in mV
   uint16_t UnderVSetpoint; // in mV
-  uint16_t DischHys;
-  uint16_t ChargeVSetpoint;
-  uint16_t ChargeVsetpoint_toll;
-  uint16_t UnderVDerateSetpoint;
-  uint16_t ChargeHys;
-  uint16_t StoreVsetpoint;
-  uint16_t WarnVoltageOffset;
+  uint16_t DischHys; // in mV
+  uint16_t ChargeVSetpoint; // in mV
+  uint16_t ChargeVsetpoint_toll; // in mV
+  uint16_t UnderVDerateSetpoint; // in mV
+  uint16_t ChargeHys; // in mV
+  uint16_t StoreVsetpoint; // in mV
+  uint16_t WarnVoltageOffset; // in mV
   
-  int16_t OverTSetpoint;
-  int16_t UnderTSetpoint;
-  int16_t UnderTDerateSetpoint;
-  int16_t OverTDerateSetpoint;
-  int16_t WarnTempOffset;
+  int16_t OverTSetpoint; // in 0,1°C
+  int16_t UnderTSetpoint; // in 0,1°C
+  int16_t UnderTDerateSetpoint; // in 0,1°C
+  int16_t OverTDerateSetpoint; // in 0,1°C
+  int16_t WarnTempOffset; // in 0,1°C
 
-  uint16_t CellGap;
+  uint16_t CellGap; // in mV
   byte useTempSensor;
-  uint16_t IgnoreVolt;
-  uint16_t balanceVoltage;
-  uint16_t balanceHyst;
+  uint16_t IgnoreVolt; // in mV
+  uint16_t balanceVoltage; // in mV
+  uint16_t balanceHyst; // in mV
   int Scells;
   int Pstrings;
   int CAP; // in Ah
   int designCAP; // in Ah
   int CAP_Wh;
-  uint16_t ChargerChargeCurrentMax;
-  uint16_t PackChargeCurrentMax;
-  uint16_t chargecurrent2max;
-  uint16_t chargecurrentend;
-  uint16_t PackDisCurrentMax ;
-  int socvolt[4];
+  uint16_t ChargerChargeCurrentMax; // in 0,1 A
+  uint16_t PackChargeCurrentMax; // in 0,1 A
+  uint16_t chargecurrent2max; // in 0,1 A
+  uint16_t chargecurrentend; // in 0,1 A
+  uint16_t PackDisCurrentMax ; // in 0,1 A
+  int socvolt[4]; // in mV
   bool invertcur;
   int cursens;
   bool voltsoc;
   int Pretime;
-  int Precurrent;
+  int Precurrent; // in mA
   float convhigh;
   float convlow;
-  int32_t changecur;
+  int32_t changecur; // in mA
   uint16_t offset1;
   uint16_t offset2;
   int balanceDuty;
@@ -119,7 +119,7 @@ typedef struct {
   int mctype;
   byte SerialCan; // bool
   unsigned long error_delay;
-  int Temp_Cap_Map[2][5] = {}; // [0][x] Temperature; [1][x] Percentage of Capacity
+  int16_t Temp_Cap_Map[2][5] = {}; // [0][x] Temperature in 0,1°C; [1][x] Percentage of Capacity
   byte Out_Map[2][9] = {}; // OUT1 = Out_Map[x][1]...; [0][x] Functions; [1][x] PWM
   uint32_t CAN1_Speed;
   uint32_t CAN2_Speed;
