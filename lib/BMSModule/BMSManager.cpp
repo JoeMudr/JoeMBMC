@@ -31,6 +31,13 @@ void BMSManager::initBMS(BMS_t BMS_Type,uint16_t IgnoreV,byte sensor, uint32_t  
     IgnoreCellV = IgnoreV;
     TSensor = sensor;
     ReadTimeout = Read_Timeout;
+    // reset all values again in case this method is called to reset the BMS
+    AvgCellVolt = 5000;
+    AvgTemp = -999;
+    HighCellVolt = 0;
+    LowCellVolt = 5000;
+    highTemp = -999;
+    lowTemp = 999;
     for (byte moduleNr = 1; moduleNr <= MAX_MODULE_ADDR; moduleNr++){
         modules[moduleNr].clearModule();
         modules[moduleNr].initModule(BMSType,IgnoreCellV,TSensor);

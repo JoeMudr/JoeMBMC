@@ -41,7 +41,7 @@
 */
 
 /////Version Identifier/////////
-uint32_t firmver = 240204;
+uint32_t firmver = 240205;
 
 //Tesla_BMSModuleManager bms;
 BMSManager bms;
@@ -796,20 +796,16 @@ void SERIALCONSOLEprint(){
       case (Stat_Healthy): SERIALCONSOLE.print("Healthy"); break;
     }
   if (Warn_handle()){SERIALCONSOLE.print(" (Warning!)");}
-  SERIALCONSOLE.print(" | Cells: ");
-  SERIALCONSOLE.print(bms.getSeriesCells());
-  SERIALCONSOLE.print("/");
-  SERIALCONSOLE.print(settings.Scells * settings.Pstrings);
-  if (ChargeActive() == true){ SERIALCONSOLE.print(" | Charger plugged"); }
-  if (digitalRead(IN1_Key) == HIGH){ SERIALCONSOLE.print(" | Key ON"); }
-  if (Balancing()){ SERIALCONSOLE.print(" | Balancing Active"); }
   SERIALCONSOLE.println();
   SERIALCONSOLE.print("In:");
   SERIALCONSOLE.print(digitalRead(IN1_Key));
   SERIALCONSOLE.print(digitalRead(IN2_Gen));
   SERIALCONSOLE.print(digitalRead(IN3_AC));
   SERIALCONSOLE.print(digitalRead(IN4));
-  SERIALCONSOLE.print(" | Charge Current Limit : ");
+  if (ChargeActive() == true){ SERIALCONSOLE.print(" | Charger plugged"); }
+  if (digitalRead(IN1_Key) == HIGH){ SERIALCONSOLE.print(" | Key ON"); }
+  SERIALCONSOLE.println();
+  SERIALCONSOLE.print("Charge Current Limit : ");
   SERIALCONSOLE.print(float(chargecurrent) * settings.nchargers / 10);
   SERIALCONSOLE.print("(");
   SERIALCONSOLE.print(float(chargecurrent) / 10);
@@ -834,6 +830,12 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.print(float(bms.getHighTemperature()) / 10,1);
   SERIALCONSOLE.print("C");
   SERIALCONSOLE.println();
+  SERIALCONSOLE.print("Cells: ");
+  SERIALCONSOLE.print(bms.getSeriesCells());
+  SERIALCONSOLE.print("/");
+  SERIALCONSOLE.print(settings.Scells * settings.Pstrings);
+  if (Balancing()){ SERIALCONSOLE.print(" | Balancing Active"); }
+  SERIALCONSOLE.println();
   SERIALCONSOLE.println();
   bms.printPackDetails();
   if (warning[2] & 0b01000000){
@@ -844,11 +846,10 @@ void SERIALCONSOLEprint(){
   
   if (settings.cursens == Sen_Analoguedual){
     if (Sen_Analogue_Num == 1)
-      { SERIALCONSOLE.print("Low Range "); }
+      { SERIALCONSOLE.print("Analogue Low"); }
     else if (Sen_Analogue_Num == 2)
-      { SERIALCONSOLE.print("High Range"); }
+      { SERIALCONSOLE.print("Analogue High"); }
   }
-  
   if (settings.cursens == Sen_Analoguesing)
     {SERIALCONSOLE.print("Analogue Single ");}
   if (settings.cursens == Sen_Canbus)
@@ -880,12 +881,18 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.println();
   SERIALCONSOLE.print("Warning: ");
   for (byte i = 0; i < 4; i++){
+    if(warning[i] <= 127){
+      SERIALCONSOLE.print("0");  // leading zero
+    }
     SERIALCONSOLE.print(warning[i], BIN);
     SERIALCONSOLE.print(" ");
   }
   SERIALCONSOLE.println();
   SERIALCONSOLE.print("Error:   ");
   for (byte i = 0; i < 4; i++){
+    if(alarm[i] <= 127){
+      SERIALCONSOLE.print("0");  // leading zero
+    }
     SERIALCONSOLE.print(alarm[i], BIN);
     SERIALCONSOLE.print(" ");
   }
