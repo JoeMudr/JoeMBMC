@@ -21,14 +21,16 @@ BMSManager::BMSManager(){
     numFoundModules = 0;
     moduleReadCnt = 0;
     balancingActive = false; 
+    ReadTimeout = 0;
 }
 
 BMSManager::~BMSManager(){}
 
-void BMSManager::initBMS(BMS_t BMS_Type,uint16_t IgnoreV,byte sensor){
+void BMSManager::initBMS(BMS_t BMS_Type,uint16_t IgnoreV,byte sensor, uint32_t  Read_Timeout){
     BMSType = BMS_Type;
     IgnoreCellV = IgnoreV;
     TSensor = sensor;
+    ReadTimeout = Read_Timeout;
     for (byte moduleNr = 1; moduleNr <= MAX_MODULE_ADDR; moduleNr++){
         modules[moduleNr].clearModule();
         modules[moduleNr].initModule(BMSType,IgnoreCellV,TSensor);
@@ -87,6 +89,7 @@ void BMSManager::printPackDetails(){
 */
 
 CAN_Struct BMSManager::poll(){
+    // reset BMS if last module read took too long.
     CAN_Struct msg;
     msg = clearCANStruct();
     moduleReadCnt = 0;
@@ -154,7 +157,10 @@ CAN_Struct BMSManager::poll(){
 
         default: break;
     }
-return msg;
+    if(millis() > LastRead + ReadTimeout){
+        initBMS(BMSType,IgnoreCellV,TSensor,ReadTimeout);
+    }
+    return msg;
 }
 
 /*
@@ -169,14 +175,14 @@ void BMSManager::readModulesValues(){
             switch (BMSType){
                 case BMS_Tesla:
                     chkRead = modules[moduleNr].readModule();
-                    if (chkRead)(moduleReadCnt++);
+                    if (chkRead){moduleReadCnt++;}
                 break;
                 
                 default: break;
             }
         }
         // only update values if moduleNr has actually been read
-        if(chkRead){ UpdateValues();}
+        if(chkRead){ UpdateValues(); LastRead = millis();}
     }
 }
 
@@ -216,7 +222,7 @@ void BMSManager::readModulesValues(CAN_message_t &msg){
         default: break;
     }
     // only update values if moduleNr has actually been read
-    if(chkRead){ UpdateValues();}
+    if(chkRead){ UpdateValues(); LastRead = millis();}
 }
 
 void BMSManager::UpdateValues(){
@@ -225,17 +231,23 @@ void BMSManager::UpdateValues(){
     LowCellVolt = 5000;
     highTemp = -999;
     lowTemp = 999;
-    for (byte moduelNr = 1; moduelNr <= MAX_MODULE_ADDR; moduelNr++){
-        if(modules[moduelNr].isExisting()){
-            if (modules[moduelNr].getHighCellV() >  HighCellVolt)  HighCellVolt = modules[moduelNr].getHighCellV();
-            if (modules[moduelNr].getLowCellV() <  LowCellVolt)  LowCellVolt = modules[moduelNr].getLowCellV();
-            if (modules[moduelNr].getAvgTemp() > -70){
-                if (modules[moduelNr].getHighTemp() > highTemp){highTemp = modules[moduelNr].getHighTemp();} 
-                if (modules[moduelNr].getLowTemp() < lowTemp){lowTemp = modules[moduelNr].getLowTemp();}
+    AvgCellVolt = 5000;
+    uint16_t cellCnt = 0;
+    for (byte moduleNr = 1; moduleNr <= MAX_MODULE_ADDR; moduleNr++){
+        if(modules[moduleNr].isExisting()){
+            if (modules[moduleNr].getHighCellV() >  HighCellVolt)  HighCellVolt = modules[moduleNr].getHighCellV();
+            if (modules[moduleNr].getLowCellV() <  LowCellVolt)  LowCellVolt = modules[moduleNr].getLowCellV();
+            if (modules[moduleNr].getAvgTemp() > -70){
+                if (modules[moduleNr].getHighTemp() > highTemp){highTemp = modules[moduleNr].getHighTemp();} 
+                if (modules[moduleNr].getLowTemp() < lowTemp){lowTemp = modules[moduleNr].getLowTemp();}
             }
-            packVolt += modules[moduelNr].getModuleVoltage();
+            packVolt += modules[moduleNr].getModuleVoltage();
+            for (byte cellNr = 0; cellNr < MAX_CELL_No; cellNr++){
+                if(modules[moduleNr].getCellVoltage(cellNr)){cellCnt++;}
+            }
         }
     } 
+    AvgCellVolt = round(packVolt / cellCnt);
 }
 
 void BMSManager::VW_get_CMU_ID(CAN_message_t &msg, byte &CMU, byte &Id){

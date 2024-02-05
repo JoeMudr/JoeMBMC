@@ -18,7 +18,7 @@ class BMSManager{
 public:
     BMSManager();
     ~BMSManager();
-    void initBMS(BMS_t BMS_Type,uint16_t IgnoreV,byte sensor);
+    void initBMS(BMS_t BMS_Type,uint16_t IgnoreV,byte sensor, uint32_t  Read_Timeout);
     CAN_Struct poll(); // call this to poll modules
     void readModulesValues(); // Serial
     void readModulesValues(CAN_message_t &msg); // CAN
@@ -71,4 +71,6 @@ private:
     CAN_Struct clearCANStruct(); // returns an empty initialized CAN_Struct
     void UpdateValues();
     CRC8 crc8;
+    uint32_t ReadTimeout;
+    uint32_t LastRead;
 };

@@ -463,7 +463,7 @@ void loop(){
 
     // TCAP is negative. 0 = full, settings.CAP * -1 is empty.
     TCAP = settings.Pstrings * CAP_Temp_alteration() * -1;
-    TCAP_Wh = TCAP * round(float(bms.getPackVoltage()) / 1000) * -1; // [ToDo] value will fluctuate
+    TCAP_Wh = TCAP * round(double(bms.getPackVoltage()) / 1000) * -1; // [ToDo] value will fluctuate
 
     // copy Ampseconds from Timer Funktion
     noInterrupts();
@@ -482,15 +482,12 @@ void loop(){
       }
     }
 
-    // reset BMS if no messages came in for too long (currently only for CAN-BMS [ToDo])
-    if (millis() > BMSLastRead + settings.ReadTimeout){BMSInit();}
-
     if (!menu_load){ 
+      // main debug output
       SERIALCONSOLEprint(); 
+      // OUT functions and states
       OUT_Debug();
-            // Display reason the Teensy was last reset
-      SERIALCONSOLE.println();
-      SERIALCONSOLE.println("Reason for last Reset: ");
+      // Display reason the Teensy was last reset
       Reset_Cause(lastResetCause);
     } //"debug" output on serial console
     //if (debug_CSV){ bms.printAllCSV(millis(), currentact, SOC); }
@@ -515,57 +512,57 @@ void loop(){
 /* ==================================================================== */
 // i.MX RT1060 Processor Reference Manual, 21.8.3 SRC Reset Status Register
 void Reset_Cause(uint32_t resetStatusReg) {
-    bool info = false;
-
-    if (resetStatusReg & SRC_SRSR_TEMPSENSE_RST_B) {
-        Serial.println("Temperature Sensor Software Reset");
-        info = true;
-    }
-    if (resetStatusReg & SRC_SRSR_WDOG3_RST_B) {
-        Serial.println("IC Watchdog3 Timeout Reset");
-        info = true;
-    }
-    if (resetStatusReg & SRC_SRSR_JTAG_SW_RST) {
-        Serial.println("JTAG Software Reset");
-        info = true;
-    }
-    if (resetStatusReg & SRC_SRSR_JTAG_RST_B) {
-        Serial.println("High-Z JTAG Reset");
-        info = true;
-    }
-    if (resetStatusReg & SRC_SRSR_WDOG_RST_B) {
-        Serial.println("IC Watchdog Timeout Reset");
-        info = true;
-    }
-    if (resetStatusReg & SRC_SRSR_IPP_USER_RESET_B) {
-        Serial.println("Power-up Sequence (Cold Reset Event)");
-        info = true;
-    }
-    if (resetStatusReg & SRC_SRSR_CSU_RESET_B) {
-        Serial.println("Central Security Unit Reset");
-        info = true;
-    }
-    if (resetStatusReg & SRC_SRSR_LOCKUP_SYSRESETREQ) {
-        Serial.println("CPU Lockup or Software Reset");
-        info = true;
-        /* Per datasheet: "SW needs to write a value to SRC_GPR5
-         * before writing the SYSRESETREQ bit and use the SRC_GPR5
-         * value to distinguish if the reset is caused by SYSRESETREQ
-         * or CPU lockup."
-         */
-    }
-    if (resetStatusReg & SRC_SRSR_IPP_RESET_B) {
-        Serial.println("Power-up Sequence");
-        info = true;
-    }
-    if (!info) {
-        Serial.println("No status bits set in SRC Reset Status Register");
-    }
+  bool info = false;
+  SERIALCONSOLE.println();
+  SERIALCONSOLE.println("Reason for last Reset: ");
+  if (resetStatusReg & SRC_SRSR_TEMPSENSE_RST_B) {
+      Serial.println("Temperature Sensor Software Reset");
+      info = true;
+  }
+  if (resetStatusReg & SRC_SRSR_WDOG3_RST_B) {
+      Serial.println("IC Watchdog3 Timeout Reset");
+      info = true;
+  }
+  if (resetStatusReg & SRC_SRSR_JTAG_SW_RST) {
+      Serial.println("JTAG Software Reset");
+      info = true;
+  }
+  if (resetStatusReg & SRC_SRSR_JTAG_RST_B) {
+      Serial.println("High-Z JTAG Reset");
+      info = true;
+  }
+  if (resetStatusReg & SRC_SRSR_WDOG_RST_B) {
+      Serial.println("IC Watchdog Timeout Reset");
+      info = true;
+  }
+  if (resetStatusReg & SRC_SRSR_IPP_USER_RESET_B) {
+      Serial.println("Power-up Sequence (Cold Reset Event)");
+      info = true;
+  }
+  if (resetStatusReg & SRC_SRSR_CSU_RESET_B) {
+      Serial.println("Central Security Unit Reset");
+      info = true;
+  }
+  if (resetStatusReg & SRC_SRSR_LOCKUP_SYSRESETREQ) {
+      Serial.println("CPU Lockup or Software Reset");
+      info = true;
+      /* Per datasheet: "SW needs to write a value to SRC_GPR5
+       * before writing the SYSRESETREQ bit and use the SRC_GPR5
+       * value to distinguish if the reset is caused by SYSRESETREQ
+       * or CPU lockup."
+       */
+  }
+  if (resetStatusReg & SRC_SRSR_IPP_RESET_B) {
+      Serial.println("Power-up Sequence");
+      info = true;
+  }
+  if (!info) {
+      Serial.println("No status bits set in SRC Reset Status Register");
+  }
 }
 
 void BMSInit(){
-  //SERIALCONSOLE.println("hit");
-  bms.initBMS(settings.BMSType,settings.IgnoreVolt,settings.useTempSensor);
+  bms.initBMS(settings.BMSType,settings.IgnoreVolt,settings.useTempSensor,settings.ReadTimeout);
 }
 
 void Alarm_Check(){
@@ -582,7 +579,7 @@ void Alarm_Check(){
   if (bms.getHighTemperature() > (settings.OverTSetpoint - settings.WarnTempOffset)){warning[0] ^= 0b11000000;}
   if (bms.getLowTemperature() < (settings.UnderTSetpoint + settings.WarnTempOffset)){warning[1] ^= 0b00000011;}
   if ((bms.getHighCellVolt() - bms.getLowCellVolt()) > settings.CellGap){warning[3] ^= 0b00000011;}
-  if (bms.getSeriesCells() != settings.Scells * settings.Pstrings){warning[2] ^= 0b11000000;BMSInit();}
+  if (bms.getSeriesCells() != settings.Scells * settings.Pstrings){warning[2] ^= 0b11000000;}
  
   //Errors
   for(byte i = 0; i<4; i++){alarm[i] = 0b10101010;} // reset to all OK
@@ -591,7 +588,7 @@ void Alarm_Check(){
   if (bms.getLowCellVolt() < settings.UnderVSetpoint){alarm[0] ^= 0b00110000;}
   if (bms.getHighTemperature() > settings.OverTSetpoint){alarm[0] ^= 0b11000000;}
   if (bms.getLowTemperature() < settings.UnderTSetpoint){alarm[1] ^= 0b00000011;}
-  if ((bms.getHighCellVolt() - bms.getLowCellVolt()) > settings.CellGap){alarm[3] ^= 0b00000011;}
+  if ((bms.getHighCellVolt() - bms.getLowCellVolt()) > settings.CellGap){alarm[3] ^= 0b00000011;} // [ToDO] bmsinit?
   //if (bms.getSeriesCells() != settings.Scells * settings.Pstrings){alarm[2] ^= 0b11000000;}
 }
 
@@ -823,7 +820,7 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.print("A");
   SERIALCONSOLE.println();
   SERIALCONSOLE.print("Vpack: ");
-  SERIALCONSOLE.print(float(bms.getPackVoltage()) / 1000,2);
+  SERIALCONSOLE.print(double(bms.getPackVoltage()) / 1000,2);
   SERIALCONSOLE.print("V| Vlow: ");
   SERIALCONSOLE.print(bms.getLowCellVolt());
   SERIALCONSOLE.print("mV| Vhigh: ");
@@ -839,6 +836,10 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.println();
   SERIALCONSOLE.println();
   bms.printPackDetails();
+  if (warning[2] & 0b01000000){
+    SERIALCONSOLE.print("!!! Internal Error / Series Cells Fault !!!");
+    SERIALCONSOLE.println("");
+  }
   SERIALCONSOLE.println();
   
   if (settings.cursens == Sen_Analoguedual){
@@ -858,7 +859,7 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.print(" SOC: ");
   SERIALCONSOLE.print(SOC);
   SERIALCONSOLE.print("% ");
-  SERIALCONSOLE.print(float(mampsecond) / 3600, 2);
+  SERIALCONSOLE.print(double(mampsecond) / 3600, 2);
   SERIALCONSOLE.print("mAh ");
   SERIALCONSOLE.print("SOH: ");
   SERIALCONSOLE.print(SOH_calc());
@@ -883,19 +884,13 @@ void SERIALCONSOLEprint(){
     SERIALCONSOLE.print(" ");
   }
   SERIALCONSOLE.println();
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.print("Error: ");
+  SERIALCONSOLE.print("Error:   ");
   for (byte i = 0; i < 4; i++){
     SERIALCONSOLE.print(alarm[i], BIN);
     SERIALCONSOLE.print(" ");
   }
   SERIALCONSOLE.println();
   SERIALCONSOLE.println();  
-  if (warning[2] & 0b01000000){
-    SERIALCONSOLE.println("");
-    SERIALCONSOLE.print("!!! Internal Error / Series Cells Fault !!!");
-    SERIALCONSOLE.println("");
-  }
 }
 
 //called by Timer
@@ -1112,30 +1107,27 @@ int16_t SOH_calc(){
 
 void SOC_update(){
   int16_t SOC_tmp = 0;
-  if (!SOCset && bms.getAvgCellVolt() > 0){
-    if (millis() > 10000){
-      SOC_tmp = map(uint16_t(bms.getAvgCellVolt() * 1000), settings.socvolt[0], settings.socvolt[2], settings.socvolt[1], settings.socvolt[3]);
+  if (millis() > 10000 && bms.getAvgCellVolt() > 0){
+    if(!SOCset || settings.voltsoc){      
+      SOC_tmp = map(bms.getAvgCellVolt(), settings.socvolt[0], settings.socvolt[2], settings.socvolt[1], settings.socvolt[3]);
       SOC = constrain(SOC_tmp, 0, 100);// keep SOC bettween 0 and 100
       mampsecond = (100 - SOC) * TCAP * (3600000/100);
-      SOCset = 1;
-      if (!menu_load){
-        SERIALCONSOLE.println();
-        SERIALCONSOLE.print("--------SOC SET: ");
-        SERIALCONSOLE.print(SOC);
-        SERIALCONSOLE.print("%, ");
-        SERIALCONSOLE.print(mampsecond);
-        SERIALCONSOLE.print("mAs");       
-        SERIALCONSOLE.print("--------");
+      if(!SOCset){
+        SOCset = 1;
+        if (!menu_load){
+          SERIALCONSOLE.println();
+          SERIALCONSOLE.print("--------SOC SET: ");
+          SERIALCONSOLE.print(SOC);
+          SERIALCONSOLE.print("%, ");
+          SERIALCONSOLE.print(mampsecond);
+          SERIALCONSOLE.print("mAs");       
+          SERIALCONSOLE.print("--------");
+        }
       }
+    } else {
+        SOC_tmp = round((TCAP - double(mampsecond) / 3600000) * 100 / TCAP);
+        SOC = constrain(SOC_tmp, 0, 100);// keep SOC bettween 0 and 100
     }
-  } else {
-      SOC_tmp = round((TCAP - mampsecond / 3600000) * 100 / TCAP);
-      SOC = constrain(SOC_tmp, 0, 100);// keep SOC bettween 0 and 100
-  }
-  if (settings.voltsoc){
-    SOC_tmp = map(uint16_t(bms.getAvgCellVolt() * 1000), settings.socvolt[0], settings.socvolt[2], settings.socvolt[1], settings.socvolt[3]);
-    SOC = constrain(SOC_tmp, 0, 100);// keep SOC between 0 and 100
-    mampsecond = (TCAP * 1000 - (SOC * TCAP * settings.Pstrings * 10)) * 3600;
   }
 }
 
@@ -1151,21 +1143,23 @@ void SOC_charged(){
     settings.Temp_Cap_Map[x][x]
 */
 uint32_t CAP_Temp_alteration(){
-  uint32_t tmp_map = 0;
+  byte factor_map = 0;
 
   //temp below lowest Setpoint
   if (bms.getLowTemperature() < settings.Temp_Cap_Map[0][0]){ 
     return settings.CAP * (settings.Temp_Cap_Map[1][0] / 100);
   }
+
   //temp above highest setpoint.
   if(bms.getLowTemperature() >= settings.Temp_Cap_Map[0][4]) {
     return settings.CAP * (settings.Temp_Cap_Map[1][4] / 100);
   }
+  
   //everything in between
   for (byte i = 1; i < 4; i++){
     if (bms.getLowTemperature() >= settings.Temp_Cap_Map[0][i] && bms.getLowTemperature() < settings.Temp_Cap_Map[0][i+1]){
-      tmp_map = map(bms.getLowTemperature(), settings.Temp_Cap_Map[0][i], settings.Temp_Cap_Map[0][i+1],settings.Temp_Cap_Map[1][i],settings.Temp_Cap_Map[1][i+1]);
-      return settings.CAP * (tmp_map / 100);
+      factor_map = map(bms.getLowTemperature(), settings.Temp_Cap_Map[0][i], settings.Temp_Cap_Map[0][i+1],settings.Temp_Cap_Map[1][i],settings.Temp_Cap_Map[1][i+1]);
+      return round(settings.CAP * float(factor_map) / 100);
     }  
   }
   return settings.CAP; // failsafe
@@ -2003,7 +1997,7 @@ void ChargeCurrentLimit(){
       }
     }
     //16A Limit
-    tmp_chargecurrent = 3600 / (round(float(bms.getPackVoltage()) / 1000)) /*PackV*/ * 95 / 10; //3,6kW max, 95% Eff. , factor 10 [ToDo] make conf. + CAN
+    tmp_chargecurrent = 3600 / (round(double(bms.getPackVoltage()) / 1000)) /*PackV*/ * 95 / 10; //3,6kW max, 95% Eff. , factor 10 [ToDo] make conf. + CAN
     if(tmp_chargecurrent < chargecurrent){
       chargecurrent = constrain(tmp_chargecurrent,settings.chargecurrentend,settings.ChargerChargeCurrentMax);
     }
@@ -2087,7 +2081,7 @@ void Output_debug(){
 void Dash_update(){
   //power gauge
   int32_t dashpower = 0; //in W
-  dashpower = round((float(currentact)/1000)*(float(bms.getPackVoltage())/1000));
+  dashpower = round((double(currentact)/1000)*(double(bms.getPackVoltage())/1000));
 
   //temp gauge
   int32_t dashtemp = 0;
@@ -2118,14 +2112,14 @@ void Dash_update(){
   
   Nextion_send("soc.val=", SOC);
   Nextion_send("soc1_gauge.val=", SOC);
-  Nextion_send("ah.val=", int(round(float(mampsecond) / 3600000)));
-  Nextion_send("current.val=", int(round(float(currentact) / 100)));
+  Nextion_send("ah.val=", int(round(double(mampsecond) / 3600000)));
+  Nextion_send("current.val=", int(round(double(currentact) / 100)));
   Nextion_send("power.val=", dashpower);
   Nextion_send("temp.val=", int(bms.getAvgTemperature()));
   Nextion_send("temp1.val=", dashtemp);
   Nextion_send("templow.val=", int(bms.getLowTemperature()));
   Nextion_send("temphigh.val=", int(bms.getHighTemperature()));
-  Nextion_send("volt.val=", int(round(float(bms.getPackVoltage()) / 100)));
+  Nextion_send("volt.val=", int(round(double(bms.getPackVoltage()) / 100)));
   Nextion_send("volt1_gauge.val=", dashvolt);
   Nextion_send("lowcell.val=", int(bms.getLowCellVolt()));
   Nextion_send("highcell.val=", int(bms.getHighCellVolt()));
@@ -2243,10 +2237,10 @@ void CAN_BMC_send(byte CAN_Nr) //BMC CAN Messages
 
   MSG.id  = 0x356;
   MSG.len = 8;
-  MSG.buf[0] = lowByte(uint16_t(round(float(bms.getPackVoltage()) / 10)));
-  MSG.buf[1] = highByte(uint16_t(round(float(bms.getPackVoltage()) / 10)));
-  MSG.buf[2] = lowByte(int32_t(round(float(currentact) / 100))); // [ToDo] values > ~6500A will overflow!
-  MSG.buf[3] = highByte(int32_t(round(float(currentact) / 100)));
+  MSG.buf[0] = lowByte(uint16_t(round(double(bms.getPackVoltage()) / 10)));
+  MSG.buf[1] = highByte(uint16_t(round(double(bms.getPackVoltage()) / 10)));
+  MSG.buf[2] = lowByte(int32_t(round(double(currentact) / 100))); // [ToDo] values > ~6500A will overflow!
+  MSG.buf[3] = highByte(int32_t(round(double(currentact) / 100)));
   MSG.buf[4] = lowByte(int16_t(bms.getAvgTemperature() * 10));
   MSG.buf[5] = highByte(int16_t(bms.getAvgTemperature() * 10));
   MSG.buf[6] = 0;
@@ -2471,7 +2465,7 @@ void CAN_Charger_Send(byte CAN_Nr){
       MSG.len = 8;
       MSG.buf[0] = 0x00;
       MSG.buf[1] = 0xDC;
-      if ((float(settings.ChargeVSetpoint/1000) * settings.Scells) > 200){
+      if ((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) > 200){
         MSG.buf[2] = highByte(uint16_t(round((float(settings.ChargeVSetpoint) / 1000 * settings.Scells ) * 10)));
         MSG.buf[3] = lowByte(uint16_t((float(settings.ChargeVSetpoint) / 1000 * settings.Scells ) * 10));
       }else{
