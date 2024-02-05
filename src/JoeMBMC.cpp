@@ -870,7 +870,7 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.print(settings.designCAP);
   SERIALCONSOLE.print("Ah TCAP: ");
   SERIALCONSOLE.print(abs(TCAP));
-  SERIALCONSOLE.print("Ah / TCAP_Wh: ");
+  SERIALCONSOLE.print("Ah | ");
   SERIALCONSOLE.print(abs(TCAP_Wh));
   SERIALCONSOLE.println("Wh");
   SERIALCONSOLE.print("Gauge PWM : ");
@@ -1115,6 +1115,7 @@ int16_t SOH_calc(){
 void SOC_update(){
   int16_t SOC_tmp = 0;
   if (millis() > 10000 && bms.getAvgCellVolt() > 0){
+    
     if(!SOCset || settings.voltsoc){      
       SOC_tmp = map(bms.getAvgCellVolt(), settings.socvolt[0], settings.socvolt[2], settings.socvolt[1], settings.socvolt[3]);
       SOC = constrain(SOC_tmp, 0, 100);// keep SOC bettween 0 and 100

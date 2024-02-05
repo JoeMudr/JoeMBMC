@@ -38,6 +38,7 @@ void BMSManager::initBMS(BMS_t BMS_Type,uint16_t IgnoreV,byte sensor, uint32_t  
     LowCellVolt = 5000;
     highTemp = -999;
     lowTemp = 999;
+    packVolt = 0;
     for (byte moduleNr = 1; moduleNr <= MAX_MODULE_ADDR; moduleNr++){
         modules[moduleNr].clearModule();
         modules[moduleNr].initModule(BMSType,IgnoreCellV,TSensor);
