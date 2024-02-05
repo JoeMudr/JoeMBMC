@@ -44,8 +44,9 @@
 #define MAX_CELL_No_VW      13
 #define MAX_Temp_Sens       3
 
-#define EEPROM_VERSION      0x22   //update any time EEPROM struct below is changed.
+#define EEPROM_VERSION      0x24   //update any time EEPROM struct below is changed.
 #define EEPROM_PAGE         0
+
 
 enum BMS_t {BMS_Dummy, BMS_Tesla, BMS_VW_MEB, BMS_VW_eGolf, BMS_BMW_I3, BMS_Type_MAX};
 
@@ -62,6 +63,7 @@ enum {CAN_BMC, CAN_BMS, CAN_Charger, CAN_Curr_Sen, CAN_MC};
 typedef struct {
   byte version;
   byte checksum;
+  uint16_t ReadTimeout;
   byte batteryID;  //which battery ID should this board associate as on the CAN bus
   BMS_t BMSType; // see BMS_Type above
   uint16_t OverVSetpoint; // in mV
@@ -101,8 +103,8 @@ typedef struct {
   bool voltsoc;
   int Pretime;
   int Precurrent; // in mA
-  float convhigh;
-  float convlow;
+  uint16_t convhigh;
+  uint16_t convlow;
   int32_t changecur; // in mA
   uint16_t offset1;
   uint16_t offset2;

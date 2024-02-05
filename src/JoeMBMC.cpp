@@ -41,7 +41,7 @@
 */
 
 /////Version Identifier/////////
-uint32_t firmver = 240122;
+uint32_t firmver = 240204;
 
 //Tesla_BMSModuleManager bms;
 BMSManager bms;
@@ -153,6 +153,8 @@ unsigned char bmcname[8] = {'J', 'O', 'E', 'M', ' ', 'B', 'M', 'C'};
 unsigned char bmcmanu[8] = {'J', 'O', 'E', 'M', ' ', 'T', 'E', 'C'};
 
 int32_t ISAVoltage1, ISAVoltage2, ISAVoltage3 = 0; //mV only with ISAscale sensor
+
+uint32_t BMSLastRead = 0;
 
 //variables for current/capacity calulation
 uint16_t Sen_AnalogueRawValue;
@@ -275,6 +277,7 @@ IntervalTimer Timer_mAmpSec;
 void loadSettings(){
   settings.version = EEPROM_VERSION;
   settings.checksum = 2;
+  settings.ReadTimeout = 2000;
   settings.batteryID = 0x01; // in the future should be 0xFF to force it to ask for an address
   settings.BMSType = BMS_Dummy;
   settings.OverVSetpoint = 4200;
@@ -284,7 +287,7 @@ void loadSettings(){
   settings.ChargeHys = 100; // mV drop required for charger to kick back on
   settings.WarnVoltageOffset = 100; // mV offset to raise a warning
   settings.DischHys = 200; // Discharge voltage offset
-  settings.CellGap = 2; // max delta between high and low cell
+  settings.CellGap = 500; // max delta between high and low cell
   settings.OverTSetpoint = 550; // 0.1°C
   settings.OverTDerateSetpoint = 450; // 0.1°C
   settings.UnderTSetpoint = 0; // 0.1°C
@@ -298,7 +301,7 @@ void loadSettings(){
   settings.CAP = 230; // battery size in Ah
   settings.designCAP = 230; // battery design capazity in Ah
   settings.CAP_Wh = 25000;
-  settings.Pstrings = 1; // strings in parallel used to divide voltage of pack
+  settings.Pstrings = 1; // strings in parallel
   settings.Scells = 30;// Cells in series
   settings.StoreVsetpoint = 3800; // mV storage mode charge max
   settings.PackDisCurrentMax = 5500; // max discharge current in 0.1A
@@ -316,8 +319,8 @@ void loadSettings(){
   settings.voltsoc = 0; //SOC purely voltage based
   settings.Pretime = 5000; //ms of precharge time
   settings.Precurrent = 1000; //ma before closing main contator
-  settings.convhigh = 312; // mV/A current sensor high range channel
-  settings.convlow = 1250; // mV/A current sensor low range channel
+  settings.convhigh = 312; // mV/A current sensor high range channel (*100)
+  settings.convlow = 1250; // mV/A current sensor low range channel (*100)
   settings.offset1 = 1650; //mV mid point of channel 1
   settings.offset2 = 1650;//mV mid point of channel 2
   settings.changecur = 140000;//mA change over point
@@ -434,12 +437,14 @@ void setup(){
 void loop(){
   BMC_Status_LED();
 
-  CAN_read(); //everything CAN related happens here
+  //everything CAN related happens here
+  CAN_read();
 
   if ( settings.cursens == Sen_Analoguedual || settings.cursens == Sen_Analoguesing){
     currentact = SEN_AnalogueRead(currentlast);
   }
 
+  // make serial console available after 3s
   if (millis() > 3000 && SERIALCONSOLE.available()){Menu();} 
 
   Alarm_Check();
@@ -476,6 +481,9 @@ void loop(){
         if (settings.CAN_Map[0][CAN_BMS] & 2){can2.write(CAN_Msg.Frame[CANMsgNr]);}
       }
     }
+
+    // reset BMS if no messages came in for too long (currently only for CAN-BMS [ToDo])
+    if (millis() > BMSLastRead + settings.ReadTimeout){BMSInit();}
 
     if (!menu_load){ 
       SERIALCONSOLEprint(); 
@@ -556,6 +564,7 @@ void Reset_Cause(uint32_t resetStatusReg) {
 }
 
 void BMSInit(){
+  //SERIALCONSOLE.println("hit");
   bms.initBMS(settings.BMSType,settings.IgnoreVolt,settings.useTempSensor);
 }
 
@@ -926,11 +935,11 @@ uint32_t SEN_AnalogueRead(int32_t tmp_currrentlast){
 
   switch (Sen_Analogue_Num){
     case 1:
-      RawCur = int16_t((Sen_AnalogueRawValue* 3300 / adc->adc0->getMaxValue()) - settings.offset1) / (settings.convlow / 100 / 1000 / (5 / 3.3));
-      if (abs((int16_t(Sen_AnalogueRawValue* 3300 / adc->adc0->getMaxValue()) - settings.offset1)) <  settings.CurDead) { RawCur = 0; }
+      RawCur = round(((float(Sen_AnalogueRawValue) * 3300 / adc->adc0->getMaxValue()) - settings.offset1) / (float(settings.convlow) / 100 / 1000 / (5 / 3.3)));
+      if (labs((round((float(Sen_AnalogueRawValue) * 3300 / adc->adc0->getMaxValue()) - settings.offset1))) <  settings.CurDead) { RawCur = 0; }
     break;
     case 2:
-      RawCur = int16_t((Sen_AnalogueRawValue* 3300 / adc->adc0->getMaxValue()) - settings.offset2) / (settings.convhigh / 100 / 1000 / (5 / 3.3));
+      RawCur = round(((float(Sen_AnalogueRawValue) * 3300 / adc->adc0->getMaxValue()) - settings.offset2) / (float(settings.convhigh) / 100 / 1000 / (5 / 3.3)));
     break;
     }      
 
@@ -1020,6 +1029,10 @@ void CAN_Debug_IN(CAN_message_t MSG, byte CanNr){
     SERIALCONSOLE.print(MSG.buf[i], HEX);
     SERIALCONSOLE.print(" ");
   }
+  if(pgn){
+    SERIALCONSOLE.print("PGN: ");
+    SERIALCONSOLE.print(pgn);
+  }
   SERIALCONSOLE.println();
 }
 
@@ -1086,10 +1099,10 @@ void Current_debug(){
 int16_t ETA(){ // return minutes
   //[ToDo] weiter glätten! mögl. vordef./errechneten Durchschnittswert einbeziehen?
   if(BMC_Stat == Stat_Charge){
-    return abs(mampsecond / 1000 / 60 / abs(currentavg/1000));
+    return labs(mampsecond / 1000 / 60 / labs(currentavg/1000));
   }else{
     if (currentavg >= 0){ return 0;}
-    else { return abs((TCAP * 60 - mampsecond / 1000 / 60) / abs(currentavg/1000)); }
+    else { return abs((TCAP * 60 - mampsecond / 1000 / 60) / labs(currentavg/1000)); }
   }
 }
 
@@ -1159,8 +1172,8 @@ uint32_t CAP_Temp_alteration(){
 }
 
 void CAP_recalc(){
-  if ((BMC_Stat == Stat_Charge && abs(mampsecond) > (settings.CAP * 3600 * 1000)) || ((warning[0] & 0x10) && bms.getAvgTemperature() > 20.00)){
-    settings.CAP = round((abs(mampsecond) / 3600) / 1000 / settings.Pstrings);
+  if ((BMC_Stat == Stat_Charge && labs(mampsecond) > (settings.CAP * 3600 * 1000)) || ((warning[0] & 0x10) && bms.getAvgTemperature() > 20.00)){
+    settings.CAP = round((labs(mampsecond) / 3600) / 1000 / settings.Pstrings);
     Settings_unsaved = 1;
   }
 }
@@ -1581,20 +1594,20 @@ void Menu(){
             break;
             case Sen_Analoguesing:
               SERIALCONSOLE.println(" Analogue Single");
+              SERIALCONSOLE.println(" Enter value below without decimal point. E.g. 1250 for 12.50mV/A");
               SERIALCONSOLE.print("[6] Analog Sensor 1 (low) mV/A: ");
-              SERIALCONSOLE.println(settings.convlow * 0.01, 2);
-              SERIALCONSOLE.print("[8] Current Sensor switch over in A: ");
-              SERIALCONSOLE.println(settings.changecur / 1000);
+              SERIALCONSOLE.println(float(settings.convlow) / 100, 2);
               SERIALCONSOLE.print("[9] Current Sensor Deadband in mV: ");
               SERIALCONSOLE.println(settings.CurDead); 
               SERIALCONSOLE.println("[10] Calibrate");
             break;
             case Sen_Analoguedual:
               SERIALCONSOLE.println(" Analogue Dual");
+              SERIALCONSOLE.println(" Enter values below without decimal point. E.g. 1250 for 12.50mV/A");
               SERIALCONSOLE.print("[6] Analog Sensor 1 (low) mV/A: ");
-              SERIALCONSOLE.println(settings.convlow * 0.01, 2);
+              SERIALCONSOLE.println(float(settings.convlow) / 100, 2);
               SERIALCONSOLE.print("[7] Analog Sensor 2 (high) mV/A: ");
-              SERIALCONSOLE.println(settings.convhigh * 0.01, 2);  
+              SERIALCONSOLE.println(float(settings.convhigh) / 100, 2);  
               SERIALCONSOLE.print("[8] Current Sensor switch over in A: ");
               SERIALCONSOLE.println(settings.changecur / 1000);                          
               SERIALCONSOLE.print("[9] Current Sensor Deadband in mV: ");
@@ -1631,7 +1644,7 @@ void Menu(){
           SERIALCONSOLE.println("Charger");
           SERIALCONSOLE.println("--------------------");
           SERIALCONSOLE.print("[1] Charge Hysteresis in mV: ");
-          SERIALCONSOLE.println(settings.ChargeHys, 0 );
+          SERIALCONSOLE.println(settings.ChargeHys);
           if (settings.chargertype > 0){
             SERIALCONSOLE.print("[2] Max Charge Current per Charger in A: ");
             SERIALCONSOLE.println(settings.ChargerChargeCurrentMax / 10);
@@ -1767,7 +1780,7 @@ void Menu(){
           SERIALCONSOLE.println("Alarms");
           SERIALCONSOLE.println("--------------------");
           SERIALCONSOLE.print("[1] Voltage Warning Offset in mV: ");
-          SERIALCONSOLE.println(settings.WarnVoltageOffset, 0);
+          SERIALCONSOLE.println(settings.WarnVoltageOffset);
           SERIALCONSOLE.print("[2] Cell Delta Voltage Alarm in mV: ");
           SERIALCONSOLE.println(settings.CellGap);
           SERIALCONSOLE.print("[3] Temp Warning offset in °C: ");
@@ -1798,7 +1811,7 @@ void Menu(){
           if (!settings.useTempSensor){SERIALCONSOLE.println("both");}
           else{SERIALCONSOLE.println(settings.useTempSensor);}
           SERIALCONSOLE.print("[2] Ignore Cells under mV: ");
-          SERIALCONSOLE.println(settings.IgnoreVolt, 0);
+          SERIALCONSOLE.println(settings.IgnoreVolt);
           SERIALCONSOLE.println("[q] Quit"); 
       }
     break;  
@@ -1950,10 +1963,8 @@ void Serial_clear(){
 }
 
 int16_t pgnFromCANId(int16_t canId){ //Parameter Group Number
-  if ((canId & 0x10000000) == 0x10000000)
-  {return (canId & 0x03FFFF00) >> 8;}
-  else
-  {return canId;}
+  if ((canId & 0x10000000) == 0x10000000){return (canId & 0x03FFFF00) >> 8;}
+  else{return canId;}
 }
 
 void ChargeCurrentLimit(){
@@ -1979,8 +1990,7 @@ void ChargeCurrentLimit(){
       if (bms.getHighCellVolt() > upperStoreVLimit){
         tmp_chargecurrent = map(bms.getHighCellVolt(), upperStoreVLimit, settings.StoreVsetpoint, settings.ChargerChargeCurrentMax, EndCurrent);
         if(tmp_chargecurrent < chargecurrent){
-          chargecurrent = tmp_chargecurrent;
-          constrain(chargecurrent,settings.chargecurrentend,settings.ChargerChargeCurrentMax);
+          chargecurrent = constrain(tmp_chargecurrent,settings.chargecurrentend,settings.ChargerChargeCurrentMax);   
         }
       }
     } else { 
@@ -1988,16 +1998,14 @@ void ChargeCurrentLimit(){
       if (bms.getHighCellVolt() /*CellV*/ > upperVLimit){
         tmp_chargecurrent = map(bms.getHighCellVolt() /*CellV*/, upperVLimit, settings.ChargeVSetpoint, settings.ChargerChargeCurrentMax, EndCurrent);
         if(tmp_chargecurrent < chargecurrent){
-          chargecurrent = tmp_chargecurrent;
-          constrain(chargecurrent,settings.chargecurrentend,settings.ChargerChargeCurrentMax);
+          chargecurrent = constrain(tmp_chargecurrent,settings.chargecurrentend,settings.ChargerChargeCurrentMax);
         }
       }
     }
     //16A Limit
     tmp_chargecurrent = 3600 / (round(float(bms.getPackVoltage()) / 1000)) /*PackV*/ * 95 / 10; //3,6kW max, 95% Eff. , factor 10 [ToDo] make conf. + CAN
     if(tmp_chargecurrent < chargecurrent){
-      chargecurrent = tmp_chargecurrent;
-      constrain(chargecurrent,settings.chargecurrentend,settings.ChargerChargeCurrentMax);
+      chargecurrent = constrain(tmp_chargecurrent,settings.chargecurrentend,settings.ChargerChargeCurrentMax);
     }
   }   
 
@@ -2011,8 +2019,8 @@ void ChargeCurrentLimit(){
   //multiply with calculated current
   //chargecurrentFactor = chargecurrent / (currentact / 100);
 
-  constrain(chargecurrent,0,settings.ChargerChargeCurrentMax); //[ToTest]
-  constrain(chargecurrent,0,settings.PackChargeCurrentMax / settings.nchargers); //[ToTest]
+  chargecurrent = constrain(chargecurrent,0,settings.ChargerChargeCurrentMax); //[ToTest]
+  chargecurrent = constrain(chargecurrent,0,settings.PackChargeCurrentMax / settings.nchargers); //[ToTest]
   chargecurrentlast = chargecurrent;
 }
 
@@ -2033,7 +2041,7 @@ void DischargeCurrentLimit(){
       if(discurrent>tmp_discurrent){discurrent = tmp_discurrent;}//don't override temperature based modification
     }
   }
-  constrain(discurrent,0,settings.PackDisCurrentMax);
+  discurrent = constrain(discurrent,0,settings.PackDisCurrentMax);
 }
 
 
@@ -2052,6 +2060,7 @@ void Input_Debug(){
 }
 
 void Output_debug(){
+  // 5s each when looped every 500ms
   if (output_debug_counter < 10){
     digitalWrite(OUT1, HIGH);
     digitalWrite(OUT2, HIGH);
@@ -2074,15 +2083,6 @@ void Output_debug(){
   output_debug_counter ++;
   if (output_debug_counter > 20){output_debug_counter = 0;}
 }
-
-/*
-void WDOG_reset(){
-  noInterrupts();
-  WDOG_REFRESH = 0xA602;
-  WDOG_REFRESH = 0xB480;
-  interrupts();
-}
-*/
 
 void Dash_update(){
   //power gauge
@@ -2173,13 +2173,13 @@ void CAN_read(){
   while (can1.read(MSG)){
     if (settings.cursens == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 1){currentact =  CAN_SEN_read(MSG);}
     if (settings.mctype && settings.CAN_Map[0][CAN_MC] & 1){CAN_MC_read(MSG);}
-    if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 1){bms.readModulesValues(MSG);}
+    if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 1){bms.readModulesValues(MSG); BMSLastRead = millis();}
     if (debug_CAN1){CAN_Debug_IN(MSG, 1);}
   }
   while (can2.read(MSG)){
     if (settings.cursens == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 2){currentact =  CAN_SEN_read(MSG);}
     if (settings.mctype && settings.CAN_Map[0][CAN_MC] & 2){CAN_MC_read(MSG);}
-    if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 2){bms.readModulesValues(MSG);}
+    if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 2){bms.readModulesValues(MSG); BMSLastRead = millis();}
     if (debug_CAN2){CAN_Debug_IN(MSG, 2);}
   }
 }

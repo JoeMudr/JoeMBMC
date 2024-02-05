@@ -3,7 +3,7 @@
     1. initBMS() - set all neccesary values and init modules
     2. poll() - sends trigger to modules to get their data. This also disables balancing. Make sure not to enable balancing before data is read (3.).
     3. readModulesValues() - read and processes the answer
-    4. Balancing() - activate / deactivate balancing, when needed 
+    4. Balancing() - Activate / deactivate balancing, when needed. Also cheks, if all module values have been read before activating balancing.
 
 */
 

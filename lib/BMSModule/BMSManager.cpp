@@ -29,7 +29,8 @@ void BMSManager::initBMS(BMS_t BMS_Type,uint16_t IgnoreV,byte sensor){
     BMSType = BMS_Type;
     IgnoreCellV = IgnoreV;
     TSensor = sensor;
-    for (byte moduleNr = 1; moduleNr <= MAX_MODULE_ADDR;moduleNr++){
+    for (byte moduleNr = 1; moduleNr <= MAX_MODULE_ADDR; moduleNr++){
+        modules[moduleNr].clearModule();
         modules[moduleNr].initModule(BMSType,IgnoreCellV,TSensor);
     }
     switch (BMSType){
@@ -129,13 +130,13 @@ CAN_Struct BMSManager::poll(){
         {
             msg = Balancing(0,false); // deactivate balancing for measurement first
 
-            const uint8_t finalxor [12] = {0xCF, 0xF5, 0xBB, 0x81, 0x27, 0x1D, 0x53, 0x69, 0x02, 0x38, 0x76, 0x4C};
+            const uint8_t finalxor[12] = {0xCF, 0xF5, 0xBB, 0x81, 0x27, 0x1D, 0x53, 0x69, 0x02, 0x38, 0x76, 0x4C};
             byte msgNr;
             for(msgNr = 0; msgNr < CAN_Struct_size; msgNr++){
                 if(!msg.Frame[msgNr].id) break; //find first unused ID.
             }            
             // CRC
-            unsigned char canmes [11];
+            unsigned char canmes[11];
             int meslen = msg.Frame[msgNr].len + 1; //remove one for crc and add two for id bytes
             canmes [1] = msg.Frame[msgNr].id;
             canmes [0] = msg.Frame[msgNr].id >> 8;
@@ -158,7 +159,7 @@ return msg;
 
 /*
     read values on Serial
-    First call Poll(Can_Nr) to initiate the module messages.
+    First call Poll() to initiate the module messages.
 */
 void BMSManager::readModulesValues(){
     
@@ -169,14 +170,13 @@ void BMSManager::readModulesValues(){
                 case BMS_Tesla:
                     chkRead = modules[moduleNr].readModule();
                     if (chkRead)(moduleReadCnt++);
-                    //SERIALCONSOLE.println(millis()-tmp);
-                    break;
+                break;
                 
                 default: break;
             }
         }
         // only update values if moduleNr has actually been read
-        if(chkRead){ UpdateValues(); }
+        if(chkRead){ UpdateValues();}
     }
 }
 
@@ -189,7 +189,8 @@ void BMSManager::readModulesValues(CAN_message_t &msg){
     byte CMU, Id = 0;
     switch (BMSType){
         case BMS_VW_eGolf:
-        case BMS_VW_MEB:{
+        case BMS_VW_MEB:
+        {
             VW_get_CMU_ID(msg, CMU, Id);
             if(CMU){
                 chkRead = modules[CMU].readModule(msg, Id);
@@ -202,7 +203,8 @@ void BMSManager::readModulesValues(CAN_message_t &msg){
         break;
         case BMS_BMW_I3:
         BMW_get_CMU_ID(msg, CMU, Id);
-            if(CMU){
+            if(CMU)
+            {
                 chkRead = modules[CMU].readModule(msg, Id);
                 if (chkRead){
                     modules[CMU].setExists(true);
@@ -214,7 +216,7 @@ void BMSManager::readModulesValues(CAN_message_t &msg){
         default: break;
     }
     // only update values if moduleNr has actually been read
-    if(chkRead){ UpdateValues(); }
+    if(chkRead){ UpdateValues();}
 }
 
 void BMSManager::UpdateValues(){

@@ -24,6 +24,7 @@ public:
     uint8_t getAlerts();
     uint8_t getCOVCells();
     uint8_t getCUVCells();
+    uint32_t getError();
     void setModuleAddress(byte newAddr);
     int getModuleAddress();
     int getBalStat();
@@ -54,9 +55,9 @@ private:
     int CUVFaults;
     byte TSensor;
     uint8_t moduleAddress;     //1 to MAX_MODULE_ADDRESS
-    uint32_t balstat; //eGolf only?
+    uint32_t balstat; // Bitmask
     uint32_t lasterror;
-    uint8_t cmuerror;
+    uint32_t CMUerror;
     uint32_t timeout;
     uint16_t retmoduleVolt;  
     byte ModuleAddress;

@@ -16,7 +16,7 @@ BMSModule::BMSModule(){
     moduleAddress = 0;
     balstat = 0;
     lasterror = 0;
-    cmuerror = 0;
+    CMUerror = 0;
     timeout = 30000; //milliseconds before comms timeout;
     BMSType = BMS_Dummy; // mandatory
     ModuleAddress = 0;
@@ -77,7 +77,7 @@ bool BMSModule::VW_decodeV(CAN_message_t &msg, byte Id){
     switch (Id){
         case 0:
             if (msg.buf[2] != 0xFF && msg.buf[5] != 0xFF && msg.buf[7] != 0xFF){ //Check module is not initializing OR a "spoof module" 
-                cmuerror = 0;
+                CMUerror = 0;
                 cellVolt[0] = (uint16_t(msg.buf[1] >> 4) + uint16_t(msg.buf[2] << 4) + 1000);
                 cellVolt[2] = (uint16_t(msg.buf[5] << 4) + uint16_t(msg.buf[4] >> 4) + 1000);
                 cellVolt[1] = (msg.buf[3] + uint16_t((msg.buf[4] & 0x0F) << 8) + 1000);
@@ -87,7 +87,7 @@ bool BMSModule::VW_decodeV(CAN_message_t &msg, byte Id){
         break;
         case 1:
             if (msg.buf[2] != 0xFF && msg.buf[5] != 0xFF && msg.buf[7] != 0xFF){ //Check module is not initializing OR a "spoof module" 
-                cmuerror = 0;
+                CMUerror = 0;
                 cellVolt[4] = (uint16_t(msg.buf[1] >> 4) + uint16_t(msg.buf[2] << 4) + 1000);
                 cellVolt[6] = (uint16_t(msg.buf[5] << 4) + uint16_t(msg.buf[4] >> 4) + 1000);
                 cellVolt[5] = (msg.buf[3] + uint16_t((msg.buf[4] & 0x0F) << 8) + 1000);
@@ -97,7 +97,7 @@ bool BMSModule::VW_decodeV(CAN_message_t &msg, byte Id){
         break;
         case 2:
             if (msg.buf[2] != 0xFF){ //Check module is not initializing OR a "spoof module" 
-                cmuerror = 0;
+                CMUerror = 0;
                 cellVolt[8] = (uint16_t(msg.buf[1] >> 4) + uint16_t(msg.buf[2] << 4) + 1000);
                 cellVolt[10] = (uint16_t(msg.buf[5] << 4) + uint16_t(msg.buf[4] >> 4) + 1000);
                 cellVolt[9] = (msg.buf[3] + uint16_t((msg.buf[4] & 0x0F) << 8) + 1000);
@@ -107,9 +107,9 @@ bool BMSModule::VW_decodeV(CAN_message_t &msg, byte Id){
         break;
         case 3:
             if (msg.buf[2] != 0xFF){ //Check module is not initializing OR a "spoof module" 
-                cmuerror = 0;
+                CMUerror = 0;
                 cellVolt[12] = (uint16_t(msg.buf[1] >> 4) + uint16_t(msg.buf[2] << 4) + 1000);
-                retVal = true;          
+                retVal = true;    
             }
         break;
 
@@ -158,7 +158,7 @@ bool BMSModule::BMW_decodeV_Bal(CAN_message_t &msg, byte Id){
     bool retVal = false;
     switch (Id){
         case 0:
-        //error = msg.buf[0] + (msg.buf[1] << 8) + (msg.buf[2] << 16) + (msg.buf[3] << 24); // [ToDo] Errorhandling
+        CMUerror = msg.buf[0] + (msg.buf[1] << 8) + (msg.buf[2] << 16) + (msg.buf[3] << 24);
         balstat = ((msg.buf[5] & 0x0F ) << 8) + msg.buf[4];
         break;
 
@@ -289,6 +289,7 @@ void BMSModule::clearModule(){
     for (byte i = 0; i < MAX_CELL_No; i++){cellVolt[i] = 0;}
     for (byte i = 0; i < MAX_Temp_Sens; i++){temperatures[i] = -999;}
     moduleVolt = 0;
+    setExists(false);
 }
 
 byte BMSModule::balanceModule(byte balance_Bitmask){
@@ -478,3 +479,5 @@ void BMSModule::stopBalance(){
     default: break;
     }
 }
+
+uint32_t BMSModule::getError(){ return CMUerror;}
