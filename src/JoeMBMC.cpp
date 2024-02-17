@@ -22,6 +22,7 @@
   TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
+
 #include <JoeMBMC.h>
 #include <BMSManager.h>
 #include <Arduino.h>
@@ -52,6 +53,7 @@ byte filterFrequency = 5 ;
 FilterOnePole lowpassFilter( LOWPASS, filterFrequency );
 
 //BMC wiring//
+//#define doesn't work here because Pins are used in Arrays below.
 const byte ACUR2 = A0; // current 1
 const byte ACUR1 = A1; // current 2
 const byte IN1_Key = 19; // input 1 - high active
@@ -72,55 +74,10 @@ uint32_t LED_Timer = 0;
 
 byte BMC_Stat = 0;
 
-//BMC status values
-#define Stat_Boot 0
-#define Stat_Ready 1
-#define Stat_Drive 2
-#define Stat_Charge 3
-#define Stat_Precharge 4
-#define Stat_Error 5
-#define Stat_Warning 6 //not used anymore!
-#define Stat_Debug 7
-#define Stat_Charged 8
-#define Stat_Healthy 9
-
-//Current sensor values
-#define Sen_Undefined 0
-#define Sen_Analoguedual 1
-#define Sen_Canbus 2
-#define Sen_Analoguesing 3
-
-//Charger Types
-#define Charger_No 0
-#define Charger_BrusaNLG5 1
-#define Charger_ChevyVolt 2
-#define Charger_Eltek 3
-#define Charger_Elcon 4
-#define Charger_Victron 5
-#define Charger_Coda 6
-
-//Motor Controllers
-#define MC_No 0
-#define Curtis 1
-
 //Serial Menu
 bool menu_load = 0;
 byte menu_option = 0;
 byte menu_current = 0;
-
-#define Menu_Start 0
-#define Menu_Main 1
-#define Menu_Battery 2
-#define Menu_CurSen 3
-#define Menu_Charger 4
-#define Menu_MC 5
-#define Menu_Outputs 6
-#define Menu_Alarms 7
-#define Menu_IgnVal 8
-#define Menu_CAN 9
-#define Menu_Exp 10
-#define Menu_Debug 11
-#define Menu_Quit 113
 
 //Errors
 uint32_t error_timer = 0;
@@ -137,7 +94,7 @@ uint16_t chargecurrentlast = 0; // in 0,1A
 uint16_t discurrent = 0;
 
 /*
-// SMA style Alarms & Warnings
+// SMA/Victron style Alarms & Warnings
 // even Bits --> Alarm / Warning raised
 // odd Bits --> Alarm / Warning cleared
 [0] (7/6) hight Temp.          (5/4) low Voltage           (3/2) high Voltage           (1/0) general Alarm
@@ -158,14 +115,14 @@ uint32_t BMSLastRead = 0;
 
 //variables for current/capacity calulation
 uint16_t Sen_AnalogueRawValue;
-uint32_t currentact = 0; // mA
-uint32_t currentlast = 0; // mA
-uint32_t currentavg = 0; // mA
-uint32_t currentavg_array[60];
+int32_t currentact = 0; // mA
+int32_t currentlast = 0; // mA
+int32_t currentavg = 0; // mA
+int32_t currentavg_array[60];
 byte currentavg_counter = 0;
-uint32_t RawCur;
+int32_t RawCur;
 int32_t mampsecond = 0; // Range 0 = full to settings.cap * -1 = empty
-int32_t mampsecondTimer = 0;
+volatile int32_t mampsecondTimer = 0;
 uint32_t lastTime;
 uint32_t looptime, looptime1, UnderTime, cleartime, baltimer = 0; //ms
 byte Sen_Analogue_Num = 1; // 1 = Sensor 1; 2 = Sensor 2
@@ -373,7 +330,6 @@ void setup(){
 
   pinMode(IN1_Key, INPUT);
   pinMode(IN2_Gen, INPUT);
-
   pinMode(IN3_AC, INPUT);
   pinMode(IN4, INPUT);
   pinMode(OUT1, OUTPUT); // 12V output
@@ -393,11 +349,11 @@ void setup(){
 
   EEPROM.get(0, settings);
   if (settings.version != EEPROM_VERSION){ loadSettings(); }
-  //loadSettings();
+  
   can1_start();
   can2_start();
 
-   //if using enable pins on a transceiver they need to be set on
+  //if using enable pins on a transceiver they need to be set on
 
   adc->adc0->setAveraging(16); // set number of averages
   adc->adc0->setResolution(16); // set bits of resolution
@@ -408,30 +364,35 @@ void setup(){
   //delay(2000);  //just for easy debugging. It takes a few seconds for USB to come up properly on most OS's  
   SERIALCONSOLE.begin(115200);
   SERIALCONSOLE.setTimeout(20);
-  SERIALCONSOLE.println("Starting up...");
-  SERIALCONSOLE.println("JoeM BMC");
+  SERIALCONSOLE.printf("Starting up...\r\n");
+  SERIALCONSOLE.printf("JoeM BMC\r\n");
 
-  DisplaySerial.begin(115200); //display and can adpater canbus
-
-/*
-  // Display reason the Teensy was last reset
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.println("Reason for last Reset: ");
-  Reset_Cause(lastResetCause);
-*/
+  //display and can adpater canbus
+  DisplaySerial.begin(115200); 
 
   // enable WDT
-  //watchdog_config.trigger = 5; // [ToDo] ?
-  //watchdog_config.timeout = 1; //[ToDo]
   watchdog.begin(watchdog_config);
 
-  SERIALBMS.begin(612500); //Tesla serial bus
-
-  SERIALCONSOLE.println("Started serial interface to BMS.");
+  //Tesla serial bus
+  SERIALBMS.begin(612500);
+  SERIALCONSOLE.printf("Started serial interface to Tesla-BMS.\r\n");
 
   BMSInit();
 
   Timer_mAmpSec.begin(mAmpsec_calc, 500000);
+}
+
+//called by Timer
+void mAmpsec_calc(){ 
+  uint32_t nowTime = millis();
+  uint32_t tmpTime = 0;
+  int32_t tmpmampsecond = 0;
+  if((nowTime - lastTime) < 0){tmpTime = 4294967295 - lastTime + nowTime;} // Catch millis() overflow [ToTest]
+  else{tmpTime = nowTime - lastTime;}
+  tmpmampsecond = ((currentact+currentlast)/2 * tmpTime / 1000);
+  mampsecondTimer += tmpmampsecond;
+  currentlast = currentact;
+  lastTime = millis();  
 }
 
 void loop(){
@@ -513,38 +474,37 @@ void loop(){
 // i.MX RT1060 Processor Reference Manual, 21.8.3 SRC Reset Status Register
 void Reset_Cause(uint32_t resetStatusReg) {
   bool info = false;
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.println("Reason for last Reset: ");
+  SERIALCONSOLE.printf("\r\nReason for last Reset:\r\n");
   if (resetStatusReg & SRC_SRSR_TEMPSENSE_RST_B) {
-      Serial.println("Temperature Sensor Software Reset");
+      Serial.printf("Temperature Sensor Software Reset\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_WDOG3_RST_B) {
-      Serial.println("IC Watchdog3 Timeout Reset");
+      Serial.printf("IC Watchdog3 Timeout Reset\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_JTAG_SW_RST) {
-      Serial.println("JTAG Software Reset");
+      Serial.printf("JTAG Software Reset\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_JTAG_RST_B) {
-      Serial.println("High-Z JTAG Reset");
+      Serial.printf("High-Z JTAG Reset\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_WDOG_RST_B) {
-      Serial.println("IC Watchdog Timeout Reset");
+      Serial.printf("IC Watchdog Timeout Reset\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_IPP_USER_RESET_B) {
-      Serial.println("Power-up Sequence (Cold Reset Event)");
+      Serial.printf("Power-up Sequence (Cold Reset Event)\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_CSU_RESET_B) {
-      Serial.println("Central Security Unit Reset");
+      Serial.printf("Central Security Unit Reset\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_LOCKUP_SYSRESETREQ) {
-      Serial.println("CPU Lockup or Software Reset");
+      Serial.printf("CPU Lockup or Software Reset\r\n");
       info = true;
       /* Per datasheet: "SW needs to write a value to SRC_GPR5
        * before writing the SYSRESETREQ bit and use the SRC_GPR5
@@ -553,11 +513,11 @@ void Reset_Cause(uint32_t resetStatusReg) {
        */
   }
   if (resetStatusReg & SRC_SRSR_IPP_RESET_B) {
-      Serial.println("Power-up Sequence");
+      Serial.printf("Power-up Sequence\r\n");
       info = true;
   }
   if (!info) {
-      Serial.println("No status bits set in SRC Reset Status Register");
+      Serial.printf("No status bits set in SRC Reset Status Register\r\n");
   }
 }
 
@@ -629,12 +589,12 @@ byte Vehicle_CondCheck(byte tmp_status){
       tmp_status = Stat_Charged;
     }    
   }
-//SERIALCONSOLE.println(tmp_status);
+
   // Set Error depending on Error conditions, except Undervoltage to let Charging recover from Undervoltage
   // Undertemp is no Error in Drive & Charge (--> derate)
   //[ToDO] Fix Tlow --> "Separate temperaturer thresholds for charge / discharge #18 "
   if (alarm[0] & 0b01010001 || /*((alarm[1] & 0x01) && (tmp_status != Stat_Drive || tmp_status != Stat_Precharge || tmp_status != Stat_Charge)) ||*/ alarm[3] & 0b00000001){tmp_status = Stat_Error;}
-//SERIALCONSOLE.println(tmp_status);
+
 
   // reset Error-Timer
   if (tmp_status != Stat_Error){error_timer = 0;}
@@ -714,7 +674,7 @@ void set_BMC_Status(byte status){
     case Stat_Charge:
       set_OUT_States(); // all off
       CAP_recalc();
-      if (Settings_unsaved){EEPROM.put(0, settings); Settings_unsaved = 0; SERIALCONSOLE.println("--Saved--");}
+      if (Settings_unsaved){EEPROM.put(0, settings); Settings_unsaved = 0; SERIALCONSOLE.printf("--Saved--\r\n");}
       set_OUT_States(Out_Charge); // enable charger
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on
       Balancing();
@@ -779,138 +739,63 @@ byte Balancing(byte active){
 
 void SERIALCONSOLEprint(){
   Serial_clear();
-  SERIALCONSOLE.print("Firmware: ");
-  SERIALCONSOLE.println(firmver);
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.print("BMC Status: ");
-  SERIALCONSOLE.print(BMC_Stat);
-  SERIALCONSOLE.print(" ");
-    switch (BMC_Stat){
-      case (Stat_Boot): SERIALCONSOLE.print("Boot"); break;
-      case (Stat_Ready): SERIALCONSOLE.print("Ready"); break;
-      case (Stat_Precharge): SERIALCONSOLE.print("Precharge"); break;
-      case (Stat_Drive): SERIALCONSOLE.print("Drive"); break;
-      case (Stat_Charge): SERIALCONSOLE.print("Charge"); break;
-      case (Stat_Charged): SERIALCONSOLE.print("Charged"); break;
-      case (Stat_Error): SERIALCONSOLE.print("Error"); break;
-      case (Stat_Healthy): SERIALCONSOLE.print("Healthy"); break;
-    }
-  if (Warn_handle()){SERIALCONSOLE.print(" (Warning!)");}
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.print("In:");
-  SERIALCONSOLE.print(digitalRead(IN1_Key));
-  SERIALCONSOLE.print(digitalRead(IN2_Gen));
-  SERIALCONSOLE.print(digitalRead(IN3_AC));
-  SERIALCONSOLE.print(digitalRead(IN4));
-  if (ChargeActive() == true){ SERIALCONSOLE.print(" | Charger plugged"); }
-  if (digitalRead(IN1_Key) == HIGH){ SERIALCONSOLE.print(" | Key ON"); }
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.print("Charge Current Limit : ");
-  SERIALCONSOLE.print(float(chargecurrent) * settings.nchargers / 10);
-  SERIALCONSOLE.print("(");
-  SERIALCONSOLE.print(float(chargecurrent) / 10);
-  SERIALCONSOLE.print(") A, Factor: ");
-  //SERIALCONSOLE.print(chargecurrentFactor);
-  SERIALCONSOLE.print(" | DisCharge Current Limit : ");
-  SERIALCONSOLE.print(discurrent / 10);
-  SERIALCONSOLE.print("A");
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.print("Vpack: ");
-  SERIALCONSOLE.print(double(bms.getPackVoltage()) / 1000,2);
-  SERIALCONSOLE.print("V| Vlow: ");
-  SERIALCONSOLE.print(bms.getLowCellVolt());
-  SERIALCONSOLE.print("mV| Vhigh: ");
-  SERIALCONSOLE.print(bms.getHighCellVolt());
-  SERIALCONSOLE.print("mV| DeltaV: ");
-  int16_t deltaV = (bms.getHighCellVolt() - bms.getLowCellVolt());
-  SERIALCONSOLE.print(deltaV);
-  SERIALCONSOLE.print("mV| tlow: ");
-  SERIALCONSOLE.print(float(bms.getLowTemperature()) / 10,1);
-  SERIALCONSOLE.print("C| thigh: ");
-  SERIALCONSOLE.print(float(bms.getHighTemperature()) / 10,1);
-  SERIALCONSOLE.print("C");
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.print("Cells: ");
-  SERIALCONSOLE.print(bms.getSeriesCells());
-  SERIALCONSOLE.print("/");
-  SERIALCONSOLE.print(settings.Scells * settings.Pstrings);
-  if (Balancing()){ SERIALCONSOLE.print(" | Balancing Active"); }
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.println();
+  SERIALCONSOLE.printf("Firmware: %li\r\n", firmver);
+  SERIALCONSOLE.printf("BMC Status: %i ", BMC_Stat);
+
+  switch (BMC_Stat){
+    case (Stat_Boot): SERIALCONSOLE.printf("Boot"); break;
+    case (Stat_Ready): SERIALCONSOLE.printf("Ready"); break;
+    case (Stat_Precharge): SERIALCONSOLE.printf("Precharge"); break;
+    case (Stat_Drive): SERIALCONSOLE.printf("Drive"); break;
+    case (Stat_Charge): SERIALCONSOLE.printf("Charge"); break;
+    case (Stat_Charged): SERIALCONSOLE.printf("Charged"); break;
+    case (Stat_Error): SERIALCONSOLE.printf("Error"); break;
+    case (Stat_Healthy): SERIALCONSOLE.printf("Healthy"); break;
+  }
+  if (Warn_handle()){SERIALCONSOLE.printf(" (Warning!)\r\n");}
+
+  SERIALCONSOLE.printf("IN %d%d%d%d",digitalRead(IN1_Key),digitalRead(IN2_Gen),digitalRead(IN3_AC),digitalRead(IN4));
+
+  if (ChargeActive() == true){ SERIALCONSOLE.printf(" | Charger plugged"); }
+  if (digitalRead(IN1_Key) == HIGH){ SERIALCONSOLE.printf(" | Key ON"); }
+
+  SERIALCONSOLE.printf("\r\nCharge Current Limit : %.2f (%.2f) A | DisCharge Current Limit : %.2fA \r\n",float(chargecurrent) * settings.nchargers / 10, float(chargecurrent) / 10, float(discurrent) / 10);
+  SERIALCONSOLE.printf("Vpack: %5.2fV| Vlow: %4imV| Vhigh %4imV| DeltaV %4imV| Tlow %3.1f°C| Thigh: %3.1f°C\r\n",double(bms.getPackVoltage()) / 1000,bms.getLowCellVolt(),bms.getHighCellVolt(),bms.getHighCellVolt() - bms.getLowCellVolt(),float(bms.getLowTemperature()) / 10,float(bms.getHighTemperature()) / 10);
+  SERIALCONSOLE.printf("Cells: %i/%i",bms.getSeriesCells(),settings.Scells * settings.Pstrings);
+
+  if (Balancing()){ SERIALCONSOLE.printf(" | Balancing Active\r\n\n"); } else { SERIALCONSOLE.printf("\r\n\n"); }
+
   bms.printPackDetails();
   if (warning[2] & 0b01000000){
-    SERIALCONSOLE.print("!!! Internal Error / Series Cells Fault !!!");
-    SERIALCONSOLE.println("");
-  }
-  SERIALCONSOLE.println();
+    SERIALCONSOLE.printf("!!! Internal Error / Series Cells Fault !!!\r\n\n");
+  } else { SERIALCONSOLE.printf("\r\n\n");}
   
   if (settings.cursens == Sen_Analoguedual){
     if (Sen_Analogue_Num == 1)
-      { SERIALCONSOLE.print("Analogue Low"); }
+      { SERIALCONSOLE.printf("Analogue Low  "); }
     else if (Sen_Analogue_Num == 2)
-      { SERIALCONSOLE.print("Analogue High"); }
+      { SERIALCONSOLE.printf("Analogue High "); }
   }
   if (settings.cursens == Sen_Analoguesing)
-    {SERIALCONSOLE.print("Analogue Single ");}
+    {SERIALCONSOLE.printf("Analogue Single ");}
   if (settings.cursens == Sen_Canbus)
-    {SERIALCONSOLE.print("CANbus ");}
-  SERIALCONSOLE.print("  ");
-  SERIALCONSOLE.print(currentact);
-  SERIALCONSOLE.print("mA");
-  SERIALCONSOLE.print(" SOC: ");
-  SERIALCONSOLE.print(SOC);
-  SERIALCONSOLE.print("% ");
-  SERIALCONSOLE.print(double(mampsecond) / 3600, 2);
-  SERIALCONSOLE.print("mAh ");
-  SERIALCONSOLE.print("SOH: ");
-  SERIALCONSOLE.print(SOH_calc());
-  SERIALCONSOLE.print("% ");
-  SERIALCONSOLE.print(settings.CAP);
-  SERIALCONSOLE.print("/");
-  SERIALCONSOLE.print(settings.designCAP);
-  SERIALCONSOLE.print("Ah TCAP: ");
-  SERIALCONSOLE.print(abs(TCAP));
-  SERIALCONSOLE.print("Ah | ");
-  SERIALCONSOLE.print(abs(TCAP_Wh));
-  SERIALCONSOLE.println("Wh");
-  SERIALCONSOLE.print("Gauge PWM : ");
-  SERIALCONSOLE.println(Gauge_update());
-  SERIALCONSOLE.print("ETA : ");
-  String eta = String(ETA() / 60) + "h " + String(ETA() % 60) + "m";
-  SERIALCONSOLE.println(eta);
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.print("Warning: ");
+    {SERIALCONSOLE.printf("CANbus ");}
+  SERIALCONSOLE.printf("%8imA\r\n",currentact);
+  SERIALCONSOLE.printf("SOC: %i%% (%.2f mAh) | SOH: %i%% (%i/%i Ah) | TCap: %iAh (%iWh)\r\n",SOC,double(mampsecond) / 3600,SOH_calc(),settings.CAP,settings.designCAP,abs(TCAP),abs(TCAP_Wh));
+  SERIALCONSOLE.printf("Gauge PWM: %i\r\n",Gauge_update());
+  SERIALCONSOLE.printf("ETA:       %ih %im\r\n",ETA() / 60,ETA() % 60);
+  SERIALCONSOLE.printf("Warning: ");
   for (byte i = 0; i < 4; i++){
-    if(warning[i] <= 127){
-      SERIALCONSOLE.print("0");  // leading zero
-    }
-    SERIALCONSOLE.print(warning[i], BIN);
-    SERIALCONSOLE.print(" ");
+    SERIALCONSOLE.printf("%2i",warning[i]); // [ToDo] in Binary
+    SERIALCONSOLE.printf(" ");
   }
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.print("Error:   ");
+  SERIALCONSOLE.printf("\r\n");
+  SERIALCONSOLE.printf("Error:   ");
   for (byte i = 0; i < 4; i++){
-    if(alarm[i] <= 127){
-      SERIALCONSOLE.print("0");  // leading zero
-    }
-    SERIALCONSOLE.print(alarm[i], BIN);
-    SERIALCONSOLE.print(" ");
+    SERIALCONSOLE.printf("%2i",alarm[i]); // [ToDo] in Binary
+    SERIALCONSOLE.printf(" ");
   }
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.println();  
-}
-
-//called by Timer
-void mAmpsec_calc(){ 
-  uint32_t nowTime = millis();
-  uint32_t tmpTime = 0;
-  int32_t tmpmampsecond = 0;
-  if((nowTime - lastTime) < 0){tmpTime = 4294967295 - lastTime + nowTime;} // Catch millis() overflow [ToTest]
-  else{tmpTime = nowTime - lastTime;}
-  tmpmampsecond = ((currentact+currentlast)/2 * tmpTime / 1000);
-  mampsecondTimer += tmpmampsecond;
-  currentlast = currentact;
-  lastTime = millis();  
+  SERIALCONSOLE.printf("\r\n\n");
 }
 
 uint32_t SEN_AnalogueRead(int32_t tmp_currrentlast){
@@ -996,7 +881,6 @@ int32_t CAN_SEN_LEMCAB(CAN_message_t MSG){
   int32_t LEM_milliamps = 0;
   for (byte i = 0; i < 4; i++){LEM_milliamps = (LEM_milliamps << 8) | MSG.buf[i];}
   LEM_milliamps -= 0x80000000;
-  //SERIALCONSOLE.println(LEM_milliamps); //debug
   return LEM_milliamps;
 }
 
@@ -1013,29 +897,23 @@ void CAN_Debug_IN(CAN_message_t MSG, byte CanNr){
   int16_t pgn = 0;
   
   switch (CanNr){
-    case 1: SERIALCONSOLE.print("CAN1 "); break;
-    case 2: SERIALCONSOLE.print("CAN2 "); break;
+    case 1: SERIALCONSOLE.printf("CAN1 "); break;
+    case 2: SERIALCONSOLE.printf("CAN2 "); break;
   }
-  SERIALCONSOLE.print("IN ");
+  SERIALCONSOLE.printf("IN ");
   if (MSG.flags.extended){
-    SERIALCONSOLE.print("ext:");
+    SERIALCONSOLE.printf("ext:%x  ",MSG.id);
     pgn = pgnFromCANId(MSG.id);
-    SERIALCONSOLE.print(MSG.id, HEX);
-    SERIALCONSOLE.print("  ");
   } else {
-    SERIALCONSOLE.print("std:");
-    SERIALCONSOLE.print(MSG.id, HEX);
-    SERIALCONSOLE.print("  ");
+    SERIALCONSOLE.printf("std:%x  ",MSG.id);
   }
   for (byte i = 0; i < MSG.len; i++) { // print the data
-    SERIALCONSOLE.print(MSG.buf[i], HEX);
-    SERIALCONSOLE.print(" ");
+    SERIALCONSOLE.printf("%x ",MSG.buf[i]);
   }
   if(pgn){
-    SERIALCONSOLE.print("PGN: ");
-    SERIALCONSOLE.print(pgn);
+    SERIALCONSOLE.printf("PGN: %i",pgn);
   }
-  SERIALCONSOLE.println();
+  SERIALCONSOLE.printf("\r\n");
 }
 
 void Currentavg_Calc(){
@@ -1054,46 +932,20 @@ void Currentavg_Calc(){
 void Current_debug(){
   if ( settings.cursens == Sen_Analoguedual || settings.cursens == Sen_Analoguesing){
     if (Sen_Analogue_Num == 1){
-      SERIALCONSOLE.println();
+      SERIALCONSOLE.printf("\r\n");
       if (settings.cursens == Sen_Analoguedual)
-      {SERIALCONSOLE.print("Low Range: ");}
+      {SERIALCONSOLE.printf("Low Range: ");}
       else
-      {SERIALCONSOLE.print("Single In: ");}
-      SERIALCONSOLE.print("Value ADC0: ");
-      SERIALCONSOLE.print(Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue()); //- settings.offset1)
-      SERIALCONSOLE.print(" ");
-      SERIALCONSOLE.print(settings.offset1);
-      SERIALCONSOLE.print("  ");
-      SERIALCONSOLE.print(int16_t(Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue()) - settings.offset1);
-      SERIALCONSOLE.print("  ");
-      SERIALCONSOLE.print(RawCur);
-      SERIALCONSOLE.print(" mA");
-      SERIALCONSOLE.print("  ");
+      {SERIALCONSOLE.printf("Single In: ");}
+      SERIALCONSOLE.printf("Value ADC0: %i  %i  %i  %imA  ",Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue(),settings.offset1,Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue() - settings.offset1,RawCur);
     }else if (Sen_Analogue_Num == 2){
-      SERIALCONSOLE.println();
-      SERIALCONSOLE.print("High Range: ");
-      SERIALCONSOLE.print("Value ADC0: ");
-      SERIALCONSOLE.print(Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue()); //- settings.offset2)
-      SERIALCONSOLE.print("  ");
-      SERIALCONSOLE.print(settings.offset2);
-      SERIALCONSOLE.print("  ");
-      SERIALCONSOLE.print((float(Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue()) - settings.offset2));
-      SERIALCONSOLE.print("  ");
-      SERIALCONSOLE.print(RawCur);
-      SERIALCONSOLE.print("mA");
-      SERIALCONSOLE.print("  ");
+      SERIALCONSOLE.printf("\r\n");
+      SERIALCONSOLE.printf("High Range: Value ADC0: %i  %i  %i  %imA  ",Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue(),settings.offset2,Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue() - settings.offset2,RawCur);
     }
-    SERIALCONSOLE.print(lowpassFilter.output());
-    SERIALCONSOLE.print(" | ");
-    SERIALCONSOLE.print(settings.changecur);
-    SERIALCONSOLE.print(" | ");
-    SERIALCONSOLE.print(currentact);
-    SERIALCONSOLE.print("mA  ");
+    SERIALCONSOLE.printf("%.2f | %i | %imA",lowpassFilter.output(),settings.changecur,currentact); // [ToDo] eliminate float?
   }
   if ( settings.cursens == Sen_Canbus ) {
-    SERIALCONSOLE.println();
-    SERIALCONSOLE.print(currentact);
-    SERIALCONSOLE.print("mA  ");
+    SERIALCONSOLE.printf("\r\n%imA",currentact);
   }
 }
 
@@ -1123,13 +975,7 @@ void SOC_update(){
       if(!SOCset){
         SOCset = 1;
         if (!menu_load){
-          SERIALCONSOLE.println();
-          SERIALCONSOLE.print("--------SOC SET: ");
-          SERIALCONSOLE.print(SOC);
-          SERIALCONSOLE.print("%, ");
-          SERIALCONSOLE.print(mampsecond);
-          SERIALCONSOLE.print("mAs");       
-          SERIALCONSOLE.print("--------");
+          SERIALCONSOLE.printf("\r\n--------SOC SET: %i%%, %imAs--------",SOC,mampsecond);
         }
       }
     } else {
@@ -1174,7 +1020,7 @@ uint32_t CAP_Temp_alteration(){
 }
 
 void CAP_recalc(){
-  if ((BMC_Stat == Stat_Charge && labs(mampsecond) > (settings.CAP * 3600 * 1000)) || ((warning[0] & 0x10) && bms.getAvgTemperature() > 20.00)){
+  if ((BMC_Stat == Stat_Charge && labs(mampsecond) > (settings.CAP * 3600 * 1000)) /*|| ((warning[0] & 0x10) && bms.getAvgTemperature() > 20.00)*/){ //[todo]
     settings.CAP = round((labs(mampsecond) / 3600) / 1000 / settings.Pstrings);
     Settings_unsaved = 1;
   }
@@ -1264,34 +1110,19 @@ void set_OUTs(){
 }
 
 void OUT_Debug(){
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.print("Function         ");  
-  SERIALCONSOLE.print("State ");  
-  SERIALCONSOLE.println("Timer");  
-  SERIALCONSOLE.println("---------------------------");  
-  for(byte i = 1; i < 12; i++){
-    SERIALCONSOLE.print(Out_Functions[i]);
-    SERIALCONSOLE.print(" ");
-    SERIALCONSOLE.print(Out_States[0][i]);
-    SERIALCONSOLE.print("      ");
-    SERIALCONSOLE.print(Out_States[1][i]);
-    SERIALCONSOLE.println();
+  SERIALCONSOLE.printf("Function         State Timer\r\n");
+  SERIALCONSOLE.printf("----------------------------\r\n");
+  for(byte i = 1; i < 12; i++){ //[ToDo] us array size for loop
+    SERIALCONSOLE.printf("%16s %i      %i\r\n",Out_Functions[i].c_str(),Out_States[0][i],Out_States[1][i]);
   } 
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.print("OUT ");  
-  SERIALCONSOLE.print("Function         ");  
-  SERIALCONSOLE.println("PWM");  
-  SERIALCONSOLE.println("------------------------");  
-  for(byte i = 1; i < 9; i++){
-    SERIALCONSOLE.print(i);
-    SERIALCONSOLE.print("   ");
-    SERIALCONSOLE.print(Out_Functions[settings.Out_Map[0][i]]);
-    SERIALCONSOLE.print(" ");
+  SERIALCONSOLE.printf("\r\n");
+  for(byte i = 1; i < 9; i++){ //[ToDo] us array size for loop
+    SERIALCONSOLE.printf("OUT %i   %16s ",i,Out_Functions[settings.Out_Map[0][i]].c_str());
     if(i>4){
-      SERIALCONSOLE.print(settings.Out_Map[1][i]);
+      SERIALCONSOLE.printf("%i",settings.Out_Map[1][i]);
     }
-    SERIALCONSOLE.println();
-  }
+    SERIALCONSOLE.printf("\r\n");
+  }  
 }
 
 //END new Output Control
@@ -1330,34 +1161,30 @@ void Prechargecon(){
 }
 
 void CurrentOffsetCalc(){
-  byte x = 0;
+
   adc->adc0->startContinuous(ACUR1);
   Sen_Analogue_Num = 1;
-  SERIALCONSOLE.print(" Calibrating Current Offset ::::: ");
-  while (x < 20){
+  SERIALCONSOLE.printf(" Calibrating Current Offset ");
+  for (byte i = 0; i < 20; i++){
     settings.offset1 = settings.offset1 + ((uint16_t)adc->adc0->analogReadContinuous() * 3300 / adc->adc0->getMaxValue());
-    SERIALCONSOLE.print(".");
+    SERIALCONSOLE.printf(".");
     delay(100);
-    x++;
   }
-  settings.offset1 = settings.offset1 / 21;
-  SERIALCONSOLE.print(settings.offset1);
-  SERIALCONSOLE.print(" current offset 1 calibrated ");
-  SERIALCONSOLE.println("  ");
-  x = 0;
-  adc->adc0->startContinuous(ACUR2);
-  Sen_Analogue_Num = 2;
-  SERIALCONSOLE.print(" Calibrating Current Offset ::::: ");
-  while (x < 20){
-    settings.offset2 = settings.offset2 + ((uint16_t)adc->adc0->analogReadContinuous() * 3300 / adc->adc0->getMaxValue());
-    SERIALCONSOLE.print(".");
-    delay(100);
-    x++;
+  settings.offset1 = settings.offset1 / 20;
+  SERIALCONSOLE.printf("\r\n Current offset 1 calibrated: %i \r\n",settings.offset1);
+
+  if(settings.cursens == Sen_Analoguedual){
+    adc->adc0->startContinuous(ACUR2);
+    Sen_Analogue_Num = 2;
+    SERIALCONSOLE.printf(" Calibrating Current Offset ");
+    for (byte i = 0; i < 20; i++){
+      settings.offset2 = settings.offset2 + ((uint16_t)adc->adc0->analogReadContinuous() * 3300 / adc->adc0->getMaxValue());
+      SERIALCONSOLE.printf(".");
+      delay(100);
+    }
+    settings.offset2 = settings.offset2 / 20;
+    SERIALCONSOLE.printf("\r\n Current offset 2 calibrated: %i",settings.offset2);
   }
-  settings.offset2 = settings.offset2 / 21;
-  SERIALCONSOLE.print(settings.offset2);
-  SERIALCONSOLE.print(" current offset 2 calibrated ");
-  SERIALCONSOLE.println("  ");
 }
 
 void Menu(){
@@ -1383,42 +1210,35 @@ void Menu(){
   if (menu_option != 109 && menu_load == 0){return;}
   else {menu_load = 1;}
   
-//  ##debug##  
-//Serial.print("Menu:"); Serial.println(menu_current);
-//Serial.print("Opt:"); Serial.println(menu_option);
-//Serial.print("Val:"); Serial.println(menu_option_val);
-//Serial.print("String: "); Serial.println(menu_option_string);
-
   switch (menu_current) {
     case Menu_Start:
       menu_current = Menu_Main;
       Serial_clear();
-      SERIALCONSOLE.println("Main");
-      SERIALCONSOLE.println("--------------------");
-      SERIALCONSOLE.println("[1] Battery");
-      SERIALCONSOLE.println("[2] Current Sensor");
-      SERIALCONSOLE.println("[3] Charger");
-      SERIALCONSOLE.println("[4] Motor Controller");
-      SERIALCONSOLE.println("[5] Outputs");
-      SERIALCONSOLE.println("[6] Alarms");
-      SERIALCONSOLE.println("[7] Ignore Values");
-      SERIALCONSOLE.println("[8] CAN-Bus");
-      SERIALCONSOLE.println("[9] Experiental");
-      SERIALCONSOLE.println("[10] Debug");
-      SERIALCONSOLE.println("[11] Reboot");
-      SERIALCONSOLE.println("[12] Load Defaults");
-      SERIALCONSOLE.print("[13] Mode: ");
-      if(settings.ESSmode){SERIALCONSOLE.println("Stationary");}
-      else{SERIALCONSOLE.println("Vehicle");}
-      SERIALCONSOLE.print("[14] BMS-Type: ");
+      SERIALCONSOLE.printf("Main\r\n");
+      SERIALCONSOLE.printf("--------------------\r\n");
+      SERIALCONSOLE.printf("[1]  Battery\r\n");
+      SERIALCONSOLE.printf("[2]  Current Sensor\r\n");
+      SERIALCONSOLE.printf("[3]  Charger\r\n");
+      SERIALCONSOLE.printf("[4]  Motor Controller\r\n");
+      SERIALCONSOLE.printf("[5]  Outputs\r\n");
+      SERIALCONSOLE.printf("[6]  Alarms\r\n");
+      SERIALCONSOLE.printf("[7]  Ignore Values\r\n");
+      SERIALCONSOLE.printf("[8]  CAN-Bus\r\n");
+      SERIALCONSOLE.printf("[9]  Experiental\r\n");
+      SERIALCONSOLE.printf("[10] Debug\r\n");
+      SERIALCONSOLE.printf("[11] Reboot\r\n");
+      SERIALCONSOLE.printf("[12] Load Defaults\r\n");
+      SERIALCONSOLE.printf("[13] Mode: %s\r\n",settings.ESSmode?"ESS":"Vehicle");
+      SERIALCONSOLE.printf("[14] BMS-Type: ");
       switch (settings.BMSType){
-        case BMS_Dummy: SERIALCONSOLE.println("NONE"); break;
-        case BMS_Tesla: SERIALCONSOLE.println("Tesla Model S/X"); break;
-        case BMS_VW_MEB:SERIALCONSOLE.println("VW MEB");          break;
-        case BMS_VW_eGolf: SERIALCONSOLE.println("VW eGolf/GTE"); break;
+        case BMS_Dummy: SERIALCONSOLE.printf("NONE\r\n"); break;
+        case BMS_Tesla: SERIALCONSOLE.printf("Tesla Model S/X\r\n"); break;
+        case BMS_VW_MEB:SERIALCONSOLE.printf("VW MEB\r\n");          break;
+        case BMS_VW_eGolf: SERIALCONSOLE.printf("VW eGolf/GTE\r\n"); break;
         default: break;
       }
-      SERIALCONSOLE.println("[q] Save & Quit");
+      SERIALCONSOLE.printf("\r\n");
+      SERIALCONSOLE.printf("[q]  Save & Quit\r\n");
     break;
     case Menu_Main:
       switch (menu_option){
@@ -1433,7 +1253,7 @@ void Menu(){
         case 9: menu_current = Menu_Exp; Menu(); break;   
         case 10: menu_current = Menu_Debug; Menu(); break; 
         case 11: break;        //[ToDo]
-        case 12: loadSettings(); Menu(); SERIALCONSOLE.println("::::::Defaults loaded::::::"); break;    
+        case 12: loadSettings(); Menu(); SERIALCONSOLE.printf("::::::Defaults loaded::::::\r\n"); break;    
         case 13: settings.ESSmode = !settings.ESSmode; menu_current = Menu_Start; Menu(); break;       
         case 14: 
           if(settings.BMSType == BMS_Type_MAX){settings.BMSType = BMS_Dummy;} 
@@ -1446,7 +1266,7 @@ void Menu(){
           EEPROM.put(0, settings); //save all change to eeprom
           menu_current = Menu_Start;
           menu_load = 0;
-          SERIALCONSOLE.println("::::::Settings saved::::::");
+          SERIALCONSOLE.printf("::::::Settings saved::::::\r\n");
         break;
       }
     break;
@@ -1485,74 +1305,42 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.println("Battery");
-          SERIALCONSOLE.println("--------------------");
-          SERIALCONSOLE.println();
-          SERIALCONSOLE.println("Cell limits:");    
-          SERIALCONSOLE.print("[1] Cell Overvoltage (mV): ");
-          SERIALCONSOLE.println(settings.OverVSetpoint);
-          SERIALCONSOLE.print("[2] Charge Voltage Setpoint (mV): ");
-          SERIALCONSOLE.println(settings.ChargeVSetpoint);
-          SERIALCONSOLE.print("[3] Cell Undervoltage (mV): ");
-          SERIALCONSOLE.println(settings.UnderVSetpoint);
-          SERIALCONSOLE.print("[4] Derate at Undervoltage (mV): ");
-          SERIALCONSOLE.println(settings.UnderVDerateSetpoint);          
-          SERIALCONSOLE.print("[5] Over Temperature (°C): ");
-          SERIALCONSOLE.println(settings.OverTSetpoint / 10);
-          SERIALCONSOLE.print("[6] Derate at high Temperature (°C): ");
-          SERIALCONSOLE.println(settings.OverTDerateSetpoint / 10);
-          SERIALCONSOLE.print("[7] Under Temperature (°C): ");
-           SERIALCONSOLE.println(settings.UnderTSetpoint / 10);
-          SERIALCONSOLE.print("[8] Derate at low Temperature (°C): ");
-          SERIALCONSOLE.println(settings.UnderTDerateSetpoint / 10);
-          SERIALCONSOLE.print("[9] Cell Balance Voltage (mV): ");
-          SERIALCONSOLE.println(settings.balanceVoltage);
-          SERIALCONSOLE.print("[10] Balance Hysteresis (mV): ");
-          SERIALCONSOLE.println(settings.balanceHyst);
-          SERIALCONSOLE.print("[11] Pack Max Discharge (A): ");
-          SERIALCONSOLE.println(settings.PackDisCurrentMax * 0.1);
-          SERIALCONSOLE.println();
-          SERIALCONSOLE.println("Pack configuration:");         
-          SERIALCONSOLE.print("[12] Pack design Capacity (Ah): ");
-          SERIALCONSOLE.println(settings.designCAP);
-          SERIALCONSOLE.print("[13] Pack current Capacity (Ah): ");
-          SERIALCONSOLE.println(settings.CAP); 
-          SERIALCONSOLE.print("[14] Cells in Parallel: ");
-          SERIALCONSOLE.println(settings.Pstrings);
-          SERIALCONSOLE.print("[15] Cells in Series: ");
-          SERIALCONSOLE.println(settings.Scells );
-          SERIALCONSOLE.println();
-          SERIALCONSOLE.println("Values for Voltage based SOC:");
-          SERIALCONSOLE.print("[16] Setpoint1 (mV): ");
-          SERIALCONSOLE.println(settings.socvolt[0] );
-          SERIALCONSOLE.print("[17] SOC @ Setpoint1 (%): ");
-          SERIALCONSOLE.println(settings.socvolt[1] );
-          SERIALCONSOLE.print("[18] Setpoint2 (mV): ");
-          SERIALCONSOLE.println(settings.socvolt[2] );
-          SERIALCONSOLE.print("[19] SOC @ Setpoint2 (%): ");
-          SERIALCONSOLE.println(settings.socvolt[3] );
-          SERIALCONSOLE.print("[20] Storage Setpoint (mV): ");
-          SERIALCONSOLE.println(settings.StoreVsetpoint);
-          SERIALCONSOLE.println();
-          SERIALCONSOLE.println("Temperature based SOC adjustment:");
+          SERIALCONSOLE.printf("Battery\r\n");
+          SERIALCONSOLE.printf("--------------------\r\n\r\n");
+          SERIALCONSOLE.printf("Cell limits:\r\n");    
+          SERIALCONSOLE.printf("[1] Cell Overvoltage (mV):           %4i\r\n",settings.OverVSetpoint);
+          SERIALCONSOLE.printf("[2] Charge Voltage Setpoint (mV):    %4i\r\n",settings.ChargeVSetpoint);
+          SERIALCONSOLE.printf("[3] Cell Undervoltage (mV):          %4i\r\n",settings.UnderVSetpoint);
+          SERIALCONSOLE.printf("[4] Derate at Undervoltage (mV):     %4i\r\n",settings.UnderVDerateSetpoint);          
+          SERIALCONSOLE.printf("[5] Over Temperature (°C):           %4i\r\n",settings.OverTSetpoint / 10);
+          SERIALCONSOLE.printf("[6] Derate at high Temperature (°C): %4i\r\n",settings.OverTDerateSetpoint / 10);
+          SERIALCONSOLE.printf("[7] Under Temperature (°C):          %4i\r\n",settings.UnderTSetpoint / 10);
+          SERIALCONSOLE.printf("[8] Derate at low Temperature (°C):  %4i\r\n",settings.UnderTDerateSetpoint / 10);
+          SERIALCONSOLE.printf("[9] Cell Balance Voltage (mV):       %4i\r\n",settings.balanceVoltage);
+          SERIALCONSOLE.printf("[10] Balance Hysteresis (mV):        %4i\r\n",settings.balanceHyst);
+          SERIALCONSOLE.printf("[11] Pack Max Discharge (A):         %4i\r\n",settings.PackDisCurrentMax / 10);
+          SERIALCONSOLE.printf("\r\n");
+          SERIALCONSOLE.printf("Pack configuration:\r\n");         
+          SERIALCONSOLE.printf("[12] Pack design Capacity (Ah):  %4i\r\n",settings.designCAP);
+          SERIALCONSOLE.printf("[13] Pack current Capacity (Ah): %4i\r\n",settings.CAP); 
+          SERIALCONSOLE.printf("[14] Cells in Parallel:          %4i\r\n",settings.Pstrings);
+          SERIALCONSOLE.printf("[15] Cells in Series:            %4i\r\n",settings.Scells );
+          SERIALCONSOLE.printf("\r\n");
+          SERIALCONSOLE.printf("Voltage based SOC:\r\n");
+          SERIALCONSOLE.printf("[16] Setpoint1 (mV):        %4i\r\n",settings.socvolt[0]);
+          SERIALCONSOLE.printf("[17] SOC @ Setpoint1 (%%):   %4i\r\n",settings.socvolt[1]);
+          SERIALCONSOLE.printf("[18] Setpoint2 (mV):        %4i\r\n",settings.socvolt[2]);
+          SERIALCONSOLE.printf("[19] SOC @ Setpoint2 (%%):   %4i\r\n",settings.socvolt[3]);
+          SERIALCONSOLE.printf("[20] Storage Setpoint (mV): %4i\r\n",settings.StoreVsetpoint);
+          SERIALCONSOLE.printf("\r\n");
+          SERIALCONSOLE.printf("Temperature based SOC adjustment:\r\n");
           for (byte i = 0; i < 5; i++){
             byte y = i*2;
-            SERIALCONSOLE.print("["+String(21+y)+"]");
-            SERIALCONSOLE.print(" ");
-            SERIALCONSOLE.print("T");
-            SERIALCONSOLE.print(i+1);
-            SERIALCONSOLE.print("(°C): ");
-            SERIALCONSOLE.println(float(settings.Temp_Cap_Map[0][i])/10 , 1);
-
-            SERIALCONSOLE.print("["+String(22+y)+"]");
-            SERIALCONSOLE.print(" ");
-            SERIALCONSOLE.print("C");
-            SERIALCONSOLE.print(i+1);
-            SERIALCONSOLE.print("(%): ");
-            SERIALCONSOLE.println(settings.Temp_Cap_Map[1][i]);
+            SERIALCONSOLE.printf("[%i] T%i(°C): %3i\r\n",21+y,i+1,settings.Temp_Cap_Map[0][i]/10);
+            SERIALCONSOLE.printf("[%i] C%i (%%): %3i\r\n",22+y,i+1,settings.Temp_Cap_Map[1][i]);
           }
-          SERIALCONSOLE.println();                    
-          SERIALCONSOLE.println("[q] Quit");          
+          SERIALCONSOLE.printf("\r\n");                    
+          SERIALCONSOLE.printf("[q] Quit");          
       }
     break; 
     case Menu_CurSen:
@@ -1565,61 +1353,46 @@ void Menu(){
           if (settings.cursens > 3){settings.cursens = 0;}
           Menu();
         break;
-        /*
-        case 5:
-          settings.curcan++;
-          if (settings.curcan > CANSen_CurCanMax) {settings.curcan = 1;}      
-          Menu();    
-        break;         
-        */
-        case 6: settings.convlow = menu_option_val; Menu(); break;
-        case 7: settings.convhigh = menu_option_val; Menu(); break;
-        case 8: settings.changecur = menu_option_val * 1000; Menu(); break;
-        case 9: settings.CurDead = menu_option_val; Menu(); break;                 
-        case 10: CurrentOffsetCalc(); Menu();break;
+        case 5: settings.convlow = menu_option_val; Menu(); break;
+        case 6: settings.convhigh = menu_option_val; Menu(); break;
+        case 7: settings.changecur = menu_option_val * 1000; Menu(); break;
+        case 8: settings.CurDead = menu_option_val; Menu(); break;                 
+        case 9: CurrentOffsetCalc(); Menu();break;
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         case 100: debug_Cur = !debug_Cur; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.println("Current Sensor");
-          SERIALCONSOLE.println("--------------------");
-          SERIALCONSOLE.print("[1] Invert Current: ");
-          SERIALCONSOLE.println(settings.invertcur);
-          SERIALCONSOLE.print("[2] Voltage based SOC: ");
-          SERIALCONSOLE.println(settings.voltsoc);
-          SERIALCONSOLE.print("[3] Current Multiplier: ");
-          SERIALCONSOLE.println(settings.ncur);
-          SERIALCONSOLE.print("[4] Sensor Type: ");  
+          SERIALCONSOLE.printf("Current Sensor\r\n");
+          SERIALCONSOLE.printf("--------------------\r\n");
+          SERIALCONSOLE.printf("[1] Invert Current:     %i\r\n",settings.invertcur);
+          SERIALCONSOLE.printf("[2] Voltage based SOC:  %i\r\n",settings.voltsoc);
+          SERIALCONSOLE.printf("[3] Current Multiplier: %i\r\n",settings.ncur);
+          SERIALCONSOLE.printf("[4] Sensor Type: ");  
           switch (settings.cursens) {
             case Sen_Canbus:
-              SERIALCONSOLE.println(" Canbus Current Sensor ");
+              SERIALCONSOLE.printf(" Canbus Current Sensor\r\n");
             break;
             case Sen_Analoguesing:
-              SERIALCONSOLE.println(" Analogue Single");
-              SERIALCONSOLE.println(" Enter value below without decimal point. E.g. 1250 for 12.50mV/A");
-              SERIALCONSOLE.print("[6] Analog Sensor 1 (low) mV/A: ");
-              SERIALCONSOLE.println(float(settings.convlow) / 100, 2);
-              SERIALCONSOLE.print("[9] Current Sensor Deadband in mV: ");
-              SERIALCONSOLE.println(settings.CurDead); 
-              SERIALCONSOLE.println("[10] Calibrate");
+              SERIALCONSOLE.printf(" Analogue Single\r\n");
+              SERIALCONSOLE.printf(" Enter value below without decimal point. E.g. 1250 for 12.50mV/A\r\n");
+              SERIALCONSOLE.printf("[7] Analog Sensor 1 (low) mV/A:    %5.2f\r\n",float(settings.convlow) / 100);
+              SERIALCONSOLE.printf("[8] Current Sensor Deadband in mV: %5i\r\n",settings.CurDead); 
+              SERIALCONSOLE.printf("[9] Calibrate\r\n");
             break;
             case Sen_Analoguedual:
-              SERIALCONSOLE.println(" Analogue Dual");
-              SERIALCONSOLE.println(" Enter values below without decimal point. E.g. 1250 for 12.50mV/A");
-              SERIALCONSOLE.print("[6] Analog Sensor 1 (low) mV/A: ");
-              SERIALCONSOLE.println(float(settings.convlow) / 100, 2);
-              SERIALCONSOLE.print("[7] Analog Sensor 2 (high) mV/A: ");
-              SERIALCONSOLE.println(float(settings.convhigh) / 100, 2);  
-              SERIALCONSOLE.print("[8] Current Sensor switch over in A: ");
-              SERIALCONSOLE.println(settings.changecur / 1000);                          
-              SERIALCONSOLE.print("[9] Current Sensor Deadband in mV: ");
-              SERIALCONSOLE.println(settings.CurDead);  
-              SERIALCONSOLE.println("[10] Calibrate");
+              SERIALCONSOLE.printf(" Analogue Dual\r\n");
+              SERIALCONSOLE.printf(" Enter values below without decimal point. E.g. 1250 for 12.50mV/A\r\n");
+              SERIALCONSOLE.printf("[5] Analog Sensor 1 (low) mV/A:      %5.2f\r\n",float(settings.convlow) / 100);
+              SERIALCONSOLE.printf("[6] Analog Sensor 2 (high) mV/A:     %5.2f\r\n",float(settings.convhigh) / 100);  
+              SERIALCONSOLE.printf("[7] Current Sensor switch over in A: %5i\r\n",settings.changecur / 1000);                          
+              SERIALCONSOLE.printf("[8] Current Sensor Deadband in mV:   %5i\r\n",settings.CurDead);  
+              SERIALCONSOLE.printf("[9] Calibrate\r\n");
             break;             
-            default: SERIALCONSOLE.println("Undefined");
+            default: SERIALCONSOLE.printf("Undefined\r\n");
           }
-          SERIALCONSOLE.println("[d] Debug");    
-          SERIALCONSOLE.println("[q] Quit");         
+          SERIALCONSOLE.printf("[d] Debug\r\n");    
+          SERIALCONSOLE.printf("\r\n");
+          SERIALCONSOLE.printf("[q] Quit\r\n");         
       }
     break;  
     case Menu_Charger:
@@ -1643,35 +1416,31 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.println("Charger");
-          SERIALCONSOLE.println("--------------------");
-          SERIALCONSOLE.print("[1] Charge Hysteresis in mV: ");
-          SERIALCONSOLE.println(settings.ChargeHys);
+          SERIALCONSOLE.printf("Charger\r\n");
+          SERIALCONSOLE.printf("--------------------\r\n");
+          SERIALCONSOLE.printf("[1] Charge Hysteresis (mV):                %4i\r\n",settings.ChargeHys);
           if (settings.chargertype > 0){
-            SERIALCONSOLE.print("[2] Max Charge Current per Charger in A: ");
-            SERIALCONSOLE.println(settings.ChargerChargeCurrentMax / 10);
-            SERIALCONSOLE.print("[3] Pack End of Charge Current in A: ");
-            SERIALCONSOLE.println(settings.chargecurrentend / 10);
+            SERIALCONSOLE.printf("[2] Max Charge Current per Charger (A):    %4i\r\n",settings.ChargerChargeCurrentMax / 10);
+            SERIALCONSOLE.printf("[3] Pack End of Charge Current in (A):     %4i\r\n",settings.chargecurrentend / 10);
           }
-          SERIALCONSOLE.print("[4] Charger Type: ");
+          SERIALCONSOLE.printf("[4] Charger Type:                 ");
           switch (settings.chargertype){
-            case 0: SERIALCONSOLE.println("Relay Control"); break;
-            case 1: SERIALCONSOLE.println("Brusa NLG5xx");  break;
-            case 2: SERIALCONSOLE.println("Volt Charger");  break;
-            case 3: SERIALCONSOLE.println("Eltek Charger"); break;
-            case 4: SERIALCONSOLE.println("Elcon Charger"); break;
-            case 5: SERIALCONSOLE.println("Victron/SMA");   break;
-            case 6: SERIALCONSOLE.println("Coda"); break;
+            case 0: SERIALCONSOLE.printf("%13s\r\n","undefined"); break;
+            case 1: SERIALCONSOLE.printf("%13s\r\n","Brusa NLG5xx");  break;
+            case 2: SERIALCONSOLE.printf("%13s\r\n","Volt Charger");  break;
+            case 3: SERIALCONSOLE.printf("%13s\r\n","Eltek Charger"); break;
+            case 4: SERIALCONSOLE.printf("%13s\r\n","Elcon Charger"); break;
+            case 5: SERIALCONSOLE.printf("%13s\r\n","Victron/SMA");   break;
+            case 6: SERIALCONSOLE.printf("%13s\r\n","Coda"); break;
           }        
-          SERIALCONSOLE.print("[5] Charger HV Connection: ");
+          SERIALCONSOLE.printf("[5] Charger HV Connection: ");
           switch (settings.ChargerDirect){
-            case 0: SERIALCONSOLE.println("Behind Contactors"); break;
-            case 1: SERIALCONSOLE.println("Direct To Battery HV"); break;
-            default: SERIALCONSOLE.println(settings.ChargerDirect); break;
+            case 0: SERIALCONSOLE.printf("%20s\r\n","Behind Contactors"); break;
+            case 1: SERIALCONSOLE.printf("%20s\r\n","Direct to Battery HV"); break;
           }       
-          SERIALCONSOLE.print("[6] Number of Chargers in parallel: ");
-          SERIALCONSOLE.println(settings.nchargers);
-          SERIALCONSOLE.println("[q] Quit"); 
+          SERIALCONSOLE.printf("[6] Number of Chargers in Parallel:        %4i\r\n",settings.nchargers);
+          SERIALCONSOLE.printf("\r\n");
+          SERIALCONSOLE.printf("[q] Quit\r\n"); 
       }
     break; 
     case Menu_MC:
@@ -1684,15 +1453,16 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
         Serial_clear();
-        SERIALCONSOLE.println("Motor Controller");
-        SERIALCONSOLE.println("--------------------");
-        SERIALCONSOLE.print("[1] Controller Type: ");
+        SERIALCONSOLE.printf("Motor Controller\r\n");
+        SERIALCONSOLE.printf("--------------------\r\n");
+        SERIALCONSOLE.printf("[1] Controller Type: ");
         switch (settings.mctype){
-          case 0: SERIALCONSOLE.println("not configured"); break;
-          case 1: SERIALCONSOLE.println("Curtis"); break;
-          default: SERIALCONSOLE.println("undefined");
+          case 0: SERIALCONSOLE.printf("not configured\r\n"); break;
+          case 1: SERIALCONSOLE.printf("Curtis\r\n”"); break;
+          default: SERIALCONSOLE.printf("undefined\r\n");
         }
-        SERIALCONSOLE.println("[q] Quit"); 
+        SERIALCONSOLE.printf("\r\n");
+        SERIALCONSOLE.printf("[q] Quit\r\n"); 
       }
     break;
     case Menu_Outputs:
@@ -1726,48 +1496,32 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.println("Outputs");
-          SERIALCONSOLE.println("--------------------");
-          SERIALCONSOLE.println("12V Outputs:");
-          for (byte i = 1; i < 5; i++){
-            byte tmp_out = i;
-            SERIALCONSOLE.print("["+String(tmp_out)+"]");   
-            SERIALCONSOLE.print(" Out"); 
-            SERIALCONSOLE.print(tmp_out);   
-            SERIALCONSOLE.print(": ");
-            SERIALCONSOLE.println(Out_Functions[settings.Out_Map[0][i]]);                   
+          SERIALCONSOLE.printf("Outputs\r\n");
+          SERIALCONSOLE.printf("--------------------\r\n");
+          SERIALCONSOLE.printf("12V Outputs:\r\n");
+          for (byte i = 1; i < 5; i++){ // [ToDo] use array size
+            SERIALCONSOLE.printf("[%i] Out%i: %s\r\n",i,i,Out_Functions[settings.Out_Map[0][i]].c_str());                    
           }
-          SERIALCONSOLE.println();
-          SERIALCONSOLE.println("PWM/GND Outputs:");
-          for (size_t i = 5; i < 9; i++){
-            byte tmp_out = i;
-            SERIALCONSOLE.print("["+String(2*i-5)+"]");   
-            SERIALCONSOLE.print(" Out"); 
-            SERIALCONSOLE.print(tmp_out);
-            SERIALCONSOLE.print(": ");
-            SERIALCONSOLE.println(Out_Functions[settings.Out_Map[0][i]]);
-            SERIALCONSOLE.print("["+String(2*i-4)+"]");
-            SERIALCONSOLE.print(" Out"); 
-            SERIALCONSOLE.print(tmp_out);
-            SERIALCONSOLE.print(" PWM: ");
-            SERIALCONSOLE.println(settings.Out_Map[1][i]);
+          SERIALCONSOLE.printf("\r\n");
+          SERIALCONSOLE.printf("PWM/GND Outputs:\r\n");
+          for (byte i = 5; i < 9; i++){ // [ToDo] use array size
+            byte pos = 2*i-5;
+            SERIALCONSOLE.printf("[%i] %sOut%i:             %s\r\n",pos,pos<10?" ":"",i,Out_Functions[settings.Out_Map[0][i]].c_str());   
+            pos = 2*i-4;
+            SERIALCONSOLE.printf("[%i] %sOut%i PWM [0-255]: %3i\r\n",pos,pos<10?" ":"",i,settings.Out_Map[1][i]);   
           }      
-          SERIALCONSOLE.println();
-          SERIALCONSOLE.println("Additional Settings:");                                              
-          SERIALCONSOLE.print("[20] Precharge Timer in ms: ");
-          SERIALCONSOLE.println(settings.Pretime);
-          SERIALCONSOLE.print("[21] Precharge finish Current in mA: ");
-          SERIALCONSOLE.println(settings.Precurrent);
-          SERIALCONSOLE.print("[22] PWM Gauge low [0-255]: ");
-          SERIALCONSOLE.println(settings.gaugelow);
-          SERIALCONSOLE.print("[23] PWM Gauge high [0-255]: ");
-          SERIALCONSOLE.println(settings.gaugehigh);
-          SERIALCONSOLE.print("[24] Gauge Test [0-255] for 30s: ");
-          SERIALCONSOLE.println(debug_Gauge_val);
-          SERIALCONSOLE.print("[d] Debug Output ");         
-          if(debug_Output){ SERIALCONSOLE.println("ON"); } 
-          else {SERIALCONSOLE.println("OFF");}
-          SERIALCONSOLE.println("[q] Quit");          
+          SERIALCONSOLE.printf("\r\n");
+          SERIALCONSOLE.printf("Additional Settings:\r\n");
+          SERIALCONSOLE.printf("[20] Precharge Timer in ms:          %4i\r\n",settings.Pretime);
+          SERIALCONSOLE.printf("[21] Precharge finish Current in mA: %4i\r\n",settings.Precurrent);
+          SERIALCONSOLE.printf("[22] PWM Gauge low [0-255]:          %4i\r\n",settings.gaugelow);
+          SERIALCONSOLE.printf("[23] PWM Gauge high [0-255]:         %4i\r\n",settings.gaugehigh);
+          SERIALCONSOLE.printf("[24] Gauge Test [0-255] for 30s:     %4i\r\n",debug_Gauge_val);
+          SERIALCONSOLE.printf("[d]  Debug Output ");         
+          if(debug_Output){ SERIALCONSOLE.printf("ON\r\n"); } 
+          else {SERIALCONSOLE.printf("OFF\r\n");}
+          SERIALCONSOLE.printf("\r\n");
+          SERIALCONSOLE.printf("[q] Quit\r\n");
       }
     break; 
     case Menu_Alarms:
@@ -1779,17 +1533,14 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.println("Alarms");
-          SERIALCONSOLE.println("--------------------");
-          SERIALCONSOLE.print("[1] Voltage Warning Offset in mV: ");
-          SERIALCONSOLE.println(settings.WarnVoltageOffset);
-          SERIALCONSOLE.print("[2] Cell Delta Voltage Alarm in mV: ");
-          SERIALCONSOLE.println(settings.CellGap);
-          SERIALCONSOLE.print("[3] Temp Warning offset in °C: ");
-          SERIALCONSOLE.println(settings.WarnTempOffset / 10);
-          SERIALCONSOLE.print("[4] Error Delay: ");
-          SERIALCONSOLE.println(settings.error_delay);
-          SERIALCONSOLE.println("[q] Quit");          
+          SERIALCONSOLE.printf("Alarms\r\n");
+          SERIALCONSOLE.printf("--------------------\r\n");
+          SERIALCONSOLE.printf("[1] Voltage Warning Offset (mV):   %4i\r\n",settings.WarnVoltageOffset);
+          SERIALCONSOLE.printf("[2] Cell Delta Voltage Alarm (mV): %4i\r\n",settings.CellGap);
+          SERIALCONSOLE.printf("[3] Temp Warning offset (°C):      %4i\r\n",settings.WarnTempOffset / 10);
+          SERIALCONSOLE.printf("[4] Error Delay (ms):             %5i\r\n",settings.error_delay);
+          SERIALCONSOLE.printf("\r\n");        
+          SERIALCONSOLE.printf("[q] Quit\r\n");          
       }
     break;   
     case Menu_IgnVal:
@@ -1807,102 +1558,69 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.println("Ignore Values");
-          SERIALCONSOLE.println("--------------------");
-          SERIALCONSOLE.print("[1] Use Temp Sensors: ");
-          if (!settings.useTempSensor){SERIALCONSOLE.println("both");}
-          else{SERIALCONSOLE.println(settings.useTempSensor);}
-          SERIALCONSOLE.print("[2] Ignore Cells under mV: ");
-          SERIALCONSOLE.println(settings.IgnoreVolt);
-          SERIALCONSOLE.println("[q] Quit"); 
+          SERIALCONSOLE.printf("Ignore Values\r\n");
+          SERIALCONSOLE.printf("--------------------\r\n");
+          SERIALCONSOLE.printf("[1] Use Temp. Sensor:       ");
+          if (!settings.useTempSensor){SERIALCONSOLE.printf("both\r\n");}
+          else{SERIALCONSOLE.printf("%4i\r\n",settings.useTempSensor);}
+          SERIALCONSOLE.printf("[2] Ignore Cells under mV: %4i\r\n",settings.IgnoreVolt);
+          SERIALCONSOLE.printf("\r\n"); 
+          SERIALCONSOLE.printf("[q] Quit\r\n"); 
       }
     break;  
     case Menu_CAN:
       switch (menu_option){
-        case 1: 
-          settings.CAN1_Speed = menu_option_val * 1000;
-          can1_start();
-          Menu(); 
-        break;  
-        case 2: 
-          settings.CAN2_Speed = menu_option_val * 1000;
-          can2_start();
-          Menu(); 
-        break;  
-        case 3:
-          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_BMC] = menu_option_val;}
-          Menu(); 
-        break;
-        case 4:
-          settings.CAN_Map[1][0] = constrain(menu_option_val,0,255);
-          Menu();
-        break;
-        case 5:
-          if(menu_option_val >= 0 && menu_option_val < 3){settings.CAN_Map[0][CAN_BMS] = menu_option_val;} // 3 not allowed. Only CAN1 or CAN2. Not both.
-          Menu(); 
-        break;
-        case 6:
-          settings.CAN_Map[1][1] = constrain(menu_option_val,0,255);
-          Menu();
-        break;        
-        case 7:
-          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_Charger] = menu_option_val;}
-          Menu(); 
-        break;
-        case 8:
-          settings.CAN_Map[1][2] = constrain(menu_option_val,0,255);
-          Menu();
-        break;        
-        case 9:
-          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_Curr_Sen] = menu_option_val;}
-          Menu(); 
-        break;
-        case 11:
-          if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_MC] = menu_option_val;}
-          Menu(); 
-        break;
+        case 1: settings.CAN1_Speed = menu_option_val * 1000; can1_start(); Menu(); break;  
+        case 2: debug_CAN1 = !debug_CAN1; Menu(); break;
+        case 3: settings.CAN2_Speed = menu_option_val * 1000; can2_start(); Menu(); break;  
+        case 4: debug_CAN2 = !debug_CAN2; Menu(); break;
+        case 5: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_BMC] = menu_option_val;} Menu(); break;
+        case 6: settings.CAN_Map[1][0] = constrain(menu_option_val,0,255); Menu(); break;
+        case 7: if(menu_option_val >= 0 && menu_option_val < 3){settings.CAN_Map[0][CAN_BMS] = menu_option_val;} // 3 not allowed. Only CAN1 or CAN2. Not both.
+          Menu(); break;
+        case 8: settings.CAN_Map[1][1] = constrain(menu_option_val,0,255); Menu(); break;        
+        case 9: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_Charger] = menu_option_val;} Menu(); break;
+        case 10: settings.CAN_Map[1][2] = constrain(menu_option_val,0,255); Menu(); break;        
+        case 11: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_Curr_Sen] = menu_option_val;} Menu(); break;
+        case 12: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_MC] = menu_option_val;} Menu(); break;
         case 111: //CO_Send_SDO(0x26,2,0,0x1800,0x02,0); // "o" for SDO
         break;
         case 112: //CO_SDO_send_test(0x26); // "p" for PDO
         break;
-        case 100: debug_CAN1 = !debug_CAN1; debug_CAN2 = !debug_CAN2; Menu(); break;    
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.println("CAN-Bus settings");
-          SERIALCONSOLE.println("--------------------");
-          SERIALCONSOLE.print("[1] Can1 Baudrate in kbps: ");
-          SERIALCONSOLE.println(settings.CAN1_Speed / 1000);
-          SERIALCONSOLE.print("[2] Can2 Baudrate in kbps: ");
-          SERIALCONSOLE.println(settings.CAN2_Speed / 1000);
-          SERIALCONSOLE.print("[d] Debug CAN1&2: ");
-          if(debug_CAN2){ SERIALCONSOLE.println("ON"); } 
-          else {SERIALCONSOLE.println("OFF");}
-          SERIALCONSOLE.println();
-          SERIALCONSOLE.println("Functions:");
+          SERIALCONSOLE.printf("CAN-Bus settings\r\n");
+          SERIALCONSOLE.printf("--------------------\r\n");
+          SERIALCONSOLE.printf("[1] Can1 Baudrate in kbps: %i\r\n",settings.CAN1_Speed / 1000);
+          SERIALCONSOLE.printf("[2] Debug CAN1: %s\r\n",debug_CAN1?"ON":"OFF");
+          SERIALCONSOLE.printf("[3] Can2 Baudrate in kbps: %i\r\n",settings.CAN2_Speed / 1000);
+          SERIALCONSOLE.printf("[4] Debug CAN2: %s\r\n",debug_CAN2?"ON":"OFF");
+          SERIALCONSOLE.printf("\r\n");
+          SERIALCONSOLE.printf("Functions:\r\n");
           for (byte i = 0; i < 5; i++){
-            SERIALCONSOLE.print("["+String((i+3)*2-3)+"] ");
+            byte pos = (i+5)*2-5;
+            SERIALCONSOLE.printf("[%i] %s",pos,pos<10?" ":"");
             switch (i){
-              case 0: SERIALCONSOLE.print("BMC Data Output: "); break;
-              case 1: SERIALCONSOLE.print("BMS: "); break;
-              case 2: SERIALCONSOLE.print("Charger: "); break;
-              case 3: SERIALCONSOLE.print("Current Sensor: "); break;
-              case 4: SERIALCONSOLE.print("Motor Controller: "); break;
+              case 0: SERIALCONSOLE.printf("BMC Data Output:  "); break;
+              case 1: SERIALCONSOLE.printf("BMS:              "); break;
+              case 2: SERIALCONSOLE.printf("Charger:          "); break;
+              case 3: SERIALCONSOLE.printf("Current Sensor:   "); break;
+              case 4: SERIALCONSOLE.printf("Motor Controller: "); break;
             }
             switch (settings.CAN_Map[0][i]){
-              case 0: SERIALCONSOLE.println("not set"); break;
-              case 1: SERIALCONSOLE.println("CAN1"); break;
-              case 2: SERIALCONSOLE.println("CAN2"); break;
-              case 3: SERIALCONSOLE.println("CAN1 & CAN2"); break;
+              case 0: SERIALCONSOLE.printf("%11s\r\n","undefined"); break;
+              case 1: SERIALCONSOLE.printf("%11s\r\n","CAN1"); break;
+              case 2: SERIALCONSOLE.printf("%11s\r\n","CAN2"); break;
+              case 3: SERIALCONSOLE.printf("%11s\r\n","CAN1 & CAN2"); break;
             }
             if (i < 3){
-              SERIALCONSOLE.print("["+String((i+3)*2-2)+"] ");
-              SERIALCONSOLE.print(settings.CAN_Map[1][i]);
-              SERIALCONSOLE.println("ms");
+              pos = (i+5)*2-4;
+              SERIALCONSOLE.printf("[%i] %sInterval:         %9ims\r\n",pos,pos<10?" ":"",settings.CAN_Map[1][i]);
             }
           }
-          
-          SERIALCONSOLE.println("[q] Quit"); 
+          SERIALCONSOLE.printf("\r\n");
+          SERIALCONSOLE.printf("[q] Quit\r\n");
       }
     break;     
     case Menu_Exp:
@@ -1912,19 +1630,17 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.println("Experimental");
-          SERIALCONSOLE.println("--------------------");
-          /*
-          SERIALCONSOLE.print("1 Send Experimental Victron CAN: ");
-          SERIALCONSOLE.println(settings.ExpMess);
-          */
-          SERIALCONSOLE.print("[2] Second Serial Port: ");
+          SERIALCONSOLE.printf("Experimental\r\n");
+          SERIALCONSOLE.printf("--------------------\r\n");
+          SERIALCONSOLE.printf("[2] Second Serial Port: ");
           switch (settings.SerialCan){
-            case 0: SERIALCONSOLE.println("Serial Display"); break;
-            case 1: SERIALCONSOLE.println("Can Bus Expansion"); break;
-            case 2: SERIALCONSOLE.println("Bluetooth App"); break;
+            case 0: SERIALCONSOLE.printf("%20s\r\n","Serial Display"); break;
+            case 1: SERIALCONSOLE.printf("%20s\r\n","Can Bus Expansion"); break;
+            case 2: SERIALCONSOLE.printf("%20s\r\n","Bluetooth App"); break;
+          
           }
-          SERIALCONSOLE.println("[q] Quit");      
+          SERIALCONSOLE.printf("\r\n");
+          SERIALCONSOLE.printf("[q] Quit\r\n");
       }
     break; 
     case Menu_Debug:
@@ -1932,36 +1648,31 @@ void Menu(){
         case 1: debug_CAN1 = !debug_CAN1; Menu(); break;
         case 2: debug_CAN2 = !debug_CAN2; Menu(); break;
         case 3: debug_Cur = !debug_Cur; Menu(); break;
-        case 4:
-          debug_Output = !debug_Output;
-          output_debug_counter = 0;
-          Menu();
-        break;
+        case 4: debug_Output = !debug_Output; output_debug_counter = 0; Menu(); break;
         case 5: debug_Input = !debug_Input; Menu(); break;
         case 6: Menu(); break;
         case 7: debug_CSV = !debug_CSV; Menu(); break;
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.println("Debug");
-          SERIALCONSOLE.println("--------------------");
-          SERIALCONSOLE.println("[1] CAN1");
-          SERIALCONSOLE.println("[2] CAN2");
-          SERIALCONSOLE.println("[3] Current");
-          SERIALCONSOLE.print("[4] Output Check: ");
-          if (debug_Output){SERIALCONSOLE.println("ON");} 
-          else{SERIALCONSOLE.println("OFF");}
-          SERIALCONSOLE.println("[5] Input Check");
-          SERIALCONSOLE.println("[6] ---");
-          SERIALCONSOLE.println("[7] CSV Output");
-          SERIALCONSOLE.println("[q] Quit");  
+          SERIALCONSOLE.printf("Debug\r\n");
+          SERIALCONSOLE.printf("--------------------\r\n");
+          SERIALCONSOLE.printf("[1] CAN1\r\n");
+          SERIALCONSOLE.printf("[2] CAN2\r\n");
+          SERIALCONSOLE.printf("[3] Current\r\n");
+          SERIALCONSOLE.printf("[4] Output Check: %s\r\n",debug_Output?"ON":"OFF");
+          SERIALCONSOLE.printf("[5] Input Check\r\n");
+          SERIALCONSOLE.printf("[6] ---\r\n");
+          SERIALCONSOLE.printf("[7] CSV Output\r\n");
+          SERIALCONSOLE.printf("\r\n");  
+          SERIALCONSOLE.printf("[q] Quit\r\n");  
       }
     break;          
   }
 }
 
 void Serial_clear(){
-  for (byte i = 0; i < 40; i++){SERIALCONSOLE.println();}
+  for (byte i = 0; i < 40; i++){SERIALCONSOLE.printf("\r\n");}
 }
 
 int16_t pgnFromCANId(int16_t canId){ //Parameter Group Number
@@ -2048,17 +1759,17 @@ void DischargeCurrentLimit(){
 
 
 void Input_Debug(){
-  SERIALCONSOLE.println();
-  SERIALCONSOLE.print("Input: ");
-  if (digitalRead(IN1_Key) == HIGH){SERIALCONSOLE.print("1 ON  ");}
-  else {SERIALCONSOLE.print("1 OFF ");}
-  if (digitalRead(IN2_Gen) == HIGH){ SERIALCONSOLE.print("2 ON  ");}
-  else {SERIALCONSOLE.print("2 OFF ");}
-  if (digitalRead(IN3_AC) == HIGH){SERIALCONSOLE.print("3 ON  ");}
-  else {SERIALCONSOLE.print("3 OFF ");}
-  if (digitalRead(IN4) == HIGH){SERIALCONSOLE.print("4 ON  ");}
-  else {SERIALCONSOLE.print("4 OFF ");}
-  SERIALCONSOLE.println();
+  Menu();
+  SERIALCONSOLE.printf("\r\nInput: ");
+  if (digitalRead(IN1_Key) == HIGH){SERIALCONSOLE.printf("1 ON  ");}
+  else {SERIALCONSOLE.printf("1 OFF ");}
+  if (digitalRead(IN2_Gen) == HIGH){ SERIALCONSOLE.printf("2 ON  ");}
+  else {SERIALCONSOLE.printf("2 OFF ");}
+  if (digitalRead(IN3_AC) == HIGH){SERIALCONSOLE.printf("3 ON  ");}
+  else {SERIALCONSOLE.printf("3 OFF ");}
+  if (digitalRead(IN4) == HIGH){SERIALCONSOLE.printf("4 ON  ");}
+  else {SERIALCONSOLE.printf("4 OFF ");}
+  SERIALCONSOLE.printf("\r\n");
 }
 
 void Output_debug(){
@@ -2152,8 +1863,7 @@ void Dash_update(){
 }
 
 void Nextion_send(String var, String val){
-  DisplaySerial.print(var);
-  DisplaySerial.print(val);
+  DisplaySerial.printf("%s%s",var,val);
   DisplaySerial.write(0xff);
   DisplaySerial.write(0xff);
   DisplaySerial.write(0xff);  
@@ -2185,29 +1895,6 @@ void CAN_read(){
     if (debug_CAN2){CAN_Debug_IN(MSG, 2);}
   }
 }
-//Test / Debug
-/*
-template<CAN_DEV_TABLE _bus>
-void CAN_BMC_send_tst(FlexCAN_T4<_bus> &CanNr){
-  CAN_message_t MSG;
-  MSG.id  = 0x351;
-  MSG.len = 8;
-  if (storagemode){
-    MSG.buf[0] = lowByte(uint16_t((settings.StoreVsetpoint * settings.Scells ) * 10));
-    MSG.buf[1] = highByte(uint16_t((settings.StoreVsetpoint * settings.Scells ) * 10));    
-  }else{
-    MSG.buf[0] = lowByte(uint16_t((settings.ChargeVSetpoint * settings.Scells ) * 10));
-    MSG.buf[1] = highByte(uint16_t((settings.ChargeVSetpoint * settings.Scells ) * 10));
-  }
-  MSG.buf[2] = lowByte(chargecurrent);
-  MSG.buf[3] = highByte(chargecurrent);
-  MSG.buf[4] = lowByte(discurrent);
-  MSG.buf[5] = highByte(discurrent);
-  MSG.buf[6] = lowByte(uint16_t((settings.UnderVDerateSetpoint * settings.Scells) * 10));
-  MSG.buf[7] = highByte(uint16_t((settings.UnderVDerateSetpoint * settings.Scells) * 10));
-  CanNr.write(MSG);
-}
-*/
 
 void CAN_BMC_send(byte CAN_Nr) //BMC CAN Messages
 {
@@ -2513,13 +2200,11 @@ void CAN_MC_read(CAN_message_t MSG){
 }
 
 void CAN_Debug_OUT(){
-  SERIALCONSOLE.print("OUT: ");
-  SERIALCONSOLE.print(outMsg.id, HEX); //debug
-  if (outMsg.len){
+  SERIALCONSOLE.printf("OUT: %x",outMsg.id);
+    if (outMsg.len){
     for (byte i = 0; i < (outMsg.len + 1); i++){
-      SERIALCONSOLE.print(" ");
-      SERIALCONSOLE.print(outMsg.buf[i], HEX); //debug
+      SERIALCONSOLE.printf(" %x", outMsg.buf[i]);
     }
+  SERIALCONSOLE.printf("\r\n");
   }
-  SERIALCONSOLE.println();
 }

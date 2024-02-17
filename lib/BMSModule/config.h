@@ -47,8 +47,24 @@
 #define EEPROM_VERSION      0x24   //update any time EEPROM struct below is changed.
 #define EEPROM_PAGE         0
 
-
+//BMS types
 enum BMS_t {BMS_Dummy, BMS_Tesla, BMS_VW_MEB, BMS_VW_eGolf, BMS_BMW_I3, BMS_Type_MAX};
+
+//BMC status values
+enum {Stat_Boot, Stat_Ready, Stat_Drive, Stat_Charge, Stat_Precharge, Stat_Error, Stat_Warning, Stat_Debug, Stat_Charged, Stat_Healthy};
+
+//Current sensor values
+enum {Sen_Undefined, Sen_Analoguesing, Sen_Analoguedual, Sen_Canbus};
+
+//Charger Types
+enum {Charger_No, Charger_BrusaNLG5, Charger_ChevyVolt, Charger_Eltek, Charger_Elcon, Charger_Victron, Charger_Coda};
+
+//Motor Controllers
+enum {MC_No, Curtis};
+
+//Menu options
+enum {Menu_Start, Menu_Main, Menu_Battery, Menu_CurSen, Menu_Charger, Menu_MC, Menu_Outputs, Menu_Alarms, Menu_IgnVal, Menu_CAN, Menu_Exp, Menu_Debug};
+#define Menu_Quit 113
 
 /*
 CAN mapping
