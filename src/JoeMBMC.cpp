@@ -1,9 +1,4 @@
 /*
-  This software is heavily based on the work of Simp ECO / tomdebree. 
-  Although most of his code has been completely rewritten, respect is due to him.
-  Hence the original Copyright:
-
-  Copyright (c) 2019 Simp ECO Engineering [& JoeM]
   Permission is hereby granted, free of charge, to any person obtaining
   a copy of this software and associated documentation files (the
   "Software"), to deal in the Software without restriction, including
@@ -32,7 +27,6 @@
 #include <FlexCAN_T4.h> //https://github.com/tonton81/FlexCAN_T4
 #include <Filters.h>//https://github.com/JonHub/Filters
 #include <Watchdog_t4.h>
-
 
 /////Version Identifier/////////
 uint32_t firmver = 240218;
