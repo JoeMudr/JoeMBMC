@@ -65,3 +65,4 @@ void set_OUT_States(byte Function = 254);
 uint32_t CAP_Temp_alteration();
 void OUT_Debug();
 bool ChargeActive();
+uint32_t ConvertToBin(byte Input);
