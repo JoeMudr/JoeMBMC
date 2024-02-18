@@ -35,7 +35,7 @@
 
 
 /////Version Identifier/////////
-uint32_t firmver = 240205;
+uint32_t firmver = 240218;
 
 //Tesla_BMSModuleManager bms;
 BMSManager bms;
