@@ -22,14 +22,14 @@
 #include <BMSManager.h>
 #include <Arduino.h>
 #include <config.h>
-#include <ADC.h> //https://github.com/pedvide/ADC
 #include <EEPROM.h>
-#include <FlexCAN_T4.h> //https://github.com/tonton81/FlexCAN_T4
-#include <Filters.h>//https://github.com/JonHub/Filters
-#include <Watchdog_t4.h>
+#include <ADC.h>          //https://github.com/pedvide/ADC
+#include <FlexCAN_T4.h>   //https://github.com/tonton81/FlexCAN_T4
+#include <Filters.h>      //https://github.com/JonHub/Filters
+#include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
 
 /////Version Identifier/////////
-uint32_t firmver = 240218;
+uint32_t firmver = 240313;
 
 //Tesla_BMSModuleManager bms;
 BMSManager bms;
@@ -420,7 +420,7 @@ void loop(){
     mampsecondTimer = 0;
     interrupts();
 
-    // Poll the BMS
+    // Poll the BMS/CMUs
     CAN_Struct CAN_Msg;
     CAN_Msg = bms.poll();
     for (byte CANMsgNr = 0; CANMsgNr < CAN_Struct_size; CANMsgNr++){
@@ -741,8 +741,8 @@ void SERIALCONSOLEprint(){
   if (Warn_handle()){SERIALCONSOLE.printf(" (Warning!)\r\n");} else {SERIALCONSOLE.printf("\r\n");}
 
   SERIALCONSOLE.printf("\r\nCharge Current Limit: %5.2f (%5.2f) A | DisCharge Current Limit: %5.2fA \r\n",float(chargecurrent) * settings.nchargers / 10, float(chargecurrent) / 10, float(discurrent) / 10);
-  SERIALCONSOLE.printf("Vpack: %5.2fV | Vlow: %4imV | Vhigh: %4imV | DeltaV: %4imV | Tlow: %3.1f°C | Thigh: %3.1f°C\r\n",double(bms.getPackVoltage()) / 1000,bms.getLowCellVolt(),bms.getHighCellVolt(),bms.getHighCellVolt() - bms.getLowCellVolt(),float(bms.getLowTemperature()) / 10,float(bms.getHighTemperature()) / 10);
-  SERIALCONSOLE.printf("Cells: %i/%i",bms.getSeriesCells(),settings.Scells * settings.Pstrings);
+  SERIALCONSOLE.printf("Vpack: %5.2fV | Vlow: %4umV | Vhigh: %4umV | DeltaV: %4umV | Tlow: %3.1f°C | Thigh: %3.1f°C\r\n",double(bms.getPackVoltage()) / 1000,bms.getLowCellVolt(),bms.getHighCellVolt(),bms.getHighCellVolt() - bms.getLowCellVolt(),float(bms.getLowTemperature()) / 10,float(bms.getHighTemperature()) / 10);
+  SERIALCONSOLE.printf("Cells: %u/%u",bms.getSeriesCells(),settings.Scells * settings.Pstrings);
 
   if (Balancing()){ SERIALCONSOLE.printf(" | Balancing Active\r\n\n"); } else { SERIALCONSOLE.printf("\r\n\n"); }
 
@@ -762,9 +762,9 @@ void SERIALCONSOLEprint(){
   if (settings.cursens == Sen_Canbus)
     {SERIALCONSOLE.printf("CANbus: ");}
   SERIALCONSOLE.printf("%6imA\r\n",currentact);
-  SERIALCONSOLE.printf("SOC:       %3i%%  (%.2fmAh)\r\n",SOC,double(mampsecond) / 3600);
-  SERIALCONSOLE.printf("SOH:       %3i%%  (%i/%iAh)\r\n",SOH_calc(),settings.designCAP,settings.CAP);
-  SERIALCONSOLE.printf("TCap:      %3iAh (%iWh)\r\n",abs(TCAP),abs(TCAP_Wh));
+  SERIALCONSOLE.printf("SOC:       %3u%%  (%.2fmAh)\r\n",SOC,double(mampsecond) / 3600);
+  SERIALCONSOLE.printf("SOH:       %3u%%  (%u/%uAh)\r\n",SOH_calc(),settings.designCAP,settings.CAP);
+  SERIALCONSOLE.printf("TCap:      %3uAh (%uWh)\r\n",abs(TCAP),abs(TCAP_Wh));
   SERIALCONSOLE.printf("Warning:   ");
   for (byte i = 0; i < 4; i++){
     SERIALCONSOLE.printf("%08i ",ConvertToBin(warning[i])); // [ToDo] in Binary
@@ -962,7 +962,7 @@ int16_t ETA(){ // return minutes
   }
 }
 
-int16_t SOH_calc(){
+uint16_t SOH_calc(){
   return round(float(settings.CAP) / float(settings.designCAP) * 100);
 }
 
@@ -1839,16 +1839,16 @@ void Dash_update(){
   Nextion_send("ah.val=", int(round(double(mampsecond) / 3600000)));
   Nextion_send("current.val=", int(round(double(currentact) / 100)));
   Nextion_send("power.val=", dashpower);
-  Nextion_send("temp.val=", int(bms.getAvgTemperature()));
+  Nextion_send("temp.val=", bms.getAvgTemperature());
   Nextion_send("temp1.val=", dashtemp);
-  Nextion_send("templow.val=", int(bms.getLowTemperature()));
-  Nextion_send("temphigh.val=", int(bms.getHighTemperature()));
+  Nextion_send("templow.val=", bms.getLowTemperature());
+  Nextion_send("temphigh.val=", bms.getHighTemperature());
   Nextion_send("volt.val=", int(round(double(bms.getPackVoltage()) / 100)));
   Nextion_send("volt1_gauge.val=", dashvolt);
-  Nextion_send("lowcell.val=", int(bms.getLowCellVolt()));
-  Nextion_send("highcell.val=", int(bms.getHighCellVolt()));
+  Nextion_send("lowcell.val=", bms.getLowCellVolt());
+  Nextion_send("highcell.val=", bms.getHighCellVolt());
   Nextion_send("firm.val=", firmver);
-  Nextion_send("celldelta.val=", int(bms.getHighCellVolt() - bms.getLowCellVolt()));
+  Nextion_send("celldelta.val=", bms.getHighCellVolt() - bms.getLowCellVolt());
   Nextion_send("cellbal.val=", bms.getBalancing());
   Nextion_send("debug.val=", abs(TCAP_Wh));
   Nextion_send("eta.txt=", eta);
@@ -1857,7 +1857,7 @@ void Dash_update(){
   Nextion_send("click ", "refresh,0");
 
   //Err_Warn-LED
-  int16_t Err_Warn = 0;
+  uint16_t Err_Warn = 0;
   if (BMC_Stat == Stat_Error){
     Err_Warn = 63488; // red
   } else if (Warn_handle()){
@@ -1868,7 +1868,7 @@ void Dash_update(){
 }
 
 void Nextion_send(String var, String val){
-  DisplaySerial.printf("%s%s",var,val);
+  DisplaySerial.printf("%s%s",var.c_str(),val.c_str());
   DisplaySerial.write(0xff);
   DisplaySerial.write(0xff);
   DisplaySerial.write(0xff);  

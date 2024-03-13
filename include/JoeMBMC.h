@@ -50,7 +50,7 @@ void Prechargecon();
 int16_t ETA();
 uint32_t SEN_AnalogueRead(int32_t tmp_currrentlast);
 void Serial_clear();
-int16_t SOH_calc();
+uint16_t SOH_calc();
 void Nextion_send(String var, String val);
 int16_t pgnFromCANId(int16_t canId);
 void nChargersCalc();

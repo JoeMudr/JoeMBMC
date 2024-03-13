@@ -44,7 +44,7 @@
 #define MAX_CELL_No_VW      13
 #define MAX_Temp_Sens       3
 
-#define EEPROM_VERSION      0x24   //update any time EEPROM struct below is changed.
+#define EEPROM_VERSION      0x25   //update any time EEPROM struct below is changed.
 #define EEPROM_PAGE         0
 
 //BMS types
@@ -103,11 +103,11 @@ typedef struct {
   uint16_t IgnoreVolt; // in mV
   uint16_t balanceVoltage; // in mV
   uint16_t balanceHyst; // in mV
-  int Scells;
-  int Pstrings;
-  int CAP; // in Ah
-  int designCAP; // in Ah
-  int CAP_Wh;
+  uint16_t Scells;
+  uint16_t Pstrings;
+  uint16_t CAP; // in Ah
+  uint16_t designCAP; // in Ah
+  uint32_t CAP_Wh;
   uint16_t ChargerChargeCurrentMax; // in 0,1 A
   uint16_t PackChargeCurrentMax; // in 0,1 A
   uint16_t chargecurrent2max; // in 0,1 A
