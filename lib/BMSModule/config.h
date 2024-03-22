@@ -41,14 +41,15 @@
 #define MAX_MODULE_ADDR     62
 #define MAX_CELL_No         13
 #define MAX_CELL_No_Tesla   6
-#define MAX_CELL_No_VW      13
+//#define MAX_CELL_No_VW      13
+//#define MAX_CELL_No_BMW     12
 #define MAX_Temp_Sens       3
 
 #define EEPROM_VERSION      0x25   //update any time EEPROM struct below is changed.
 #define EEPROM_PAGE         0
 
 //BMS types
-enum BMS_t {BMS_Dummy, BMS_Tesla, BMS_VW_MEB, BMS_VW_eGolf, BMS_BMW_I3, BMS_Type_MAX};
+enum BMS_t {BMS_Dummy, BMS_Tesla, BMS_VW_MEB, BMS_VW_eGolf, BMS_BMW_I3, BMS_BMW_MiniE, BMS_Type_MAX};
 
 //BMC status values
 enum {Stat_Boot, Stat_Ready, Stat_Drive, Stat_Charge, Stat_Precharge, Stat_Error, Stat_Warning, Stat_Debug, Stat_Charged, Stat_Healthy};

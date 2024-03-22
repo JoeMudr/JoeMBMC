@@ -58,6 +58,7 @@ private:
     bool balancingActive;
     void VW_get_CMU_ID(CAN_message_t &msg,byte &CMU,byte &Id);
     void BMW_get_CMU_ID(CAN_message_t &msg,byte &CMU,byte &Id);
+    uint8_t BMW_CRC(CAN_message_t &msg, byte Id);
     CAN_Struct VW_Balancing();
     CAN_Struct BMW_Balancing();
     void Tesla_Balancing();
@@ -73,4 +74,6 @@ private:
     CRC8 crc8;
     uint32_t ReadTimeout;
     uint32_t LastRead;
+    uint32_t polltime; // keep track of poll intervall
+    byte MsgCnt;
 };

@@ -1,5 +1,3 @@
-
-
 #include "CRC8.h"
 
 

@@ -406,6 +406,18 @@ void loop(){
 
   if(debug_Cur){Current_debug();}
 
+  // Poll the BMS/CMUs
+  // Interval restrictions are managed in BMSManager.cpp
+  CAN_Struct CAN_Msg;
+  CAN_Msg = bms.poll();
+  for (byte CANMsgNr = 0; CANMsgNr < CAN_Struct_size; CANMsgNr++){
+    if (CAN_Msg.Frame[CANMsgNr].id){ // bms.poll() returns a previously cleaned CAN_Struct. We only send actually filled Frames.
+      if (settings.CAN_Map[0][CAN_BMS] & 1){can1.write(CAN_Msg.Frame[CANMsgNr]);}
+      if (settings.CAN_Map[0][CAN_BMS] & 2){can2.write(CAN_Msg.Frame[CANMsgNr]);}
+      delay(1);
+    }
+  }
+
   if (millis() - looptime > 500){ // 0.5s loop
     looptime = millis();
 
@@ -419,16 +431,6 @@ void loop(){
     if(mampsecond > 0){mampsecond = 0;}
     mampsecondTimer = 0;
     interrupts();
-
-    // Poll the BMS/CMUs
-    CAN_Struct CAN_Msg;
-    CAN_Msg = bms.poll();
-    for (byte CANMsgNr = 0; CANMsgNr < CAN_Struct_size; CANMsgNr++){
-      if (CAN_Msg.Frame[CANMsgNr].id){ // bms.poll() returns a previously cleaned CAN_Struct. We only send actually filled Frames.
-        if (settings.CAN_Map[0][CAN_BMS] & 1){can1.write(CAN_Msg.Frame[CANMsgNr]);}
-        if (settings.CAN_Map[0][CAN_BMS] & 2){can2.write(CAN_Msg.Frame[CANMsgNr]);}
-      }
-    }
 
     if (!menu_load){ 
       // main debug output
@@ -1240,6 +1242,8 @@ void Menu(){
         case BMS_Tesla: SERIALCONSOLE.printf("Tesla Model S/X\r\n"); break;
         case BMS_VW_MEB:SERIALCONSOLE.printf("VW MEB\r\n");          break;
         case BMS_VW_eGolf: SERIALCONSOLE.printf("VW eGolf/GTE\r\n"); break;
+        case BMS_BMW_I3: SERIALCONSOLE.printf("BMW i3\r\n"); break;
+        case BMS_BMW_MiniE: SERIALCONSOLE.printf("BMW MiniE\r\n"); break;
         default: break;
       }
       SERIALCONSOLE.printf("\r\n");

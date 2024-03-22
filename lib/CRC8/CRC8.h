@@ -16,15 +16,13 @@
 	#define TOPBIT (1 << (WIDTH - 1))
 
 	class CRC8 {
-	  public:
-	   CRC8();
-	   //void begin();
-	   crc get_crc8(uint8_t const message[], int nBytes, uint8_t final);
+	public:
+		CRC8();
+		//void begin();
+		crc get_crc8(uint8_t const message[], int nBytes, uint8_t final);
 	 
-	 private:
-	  uint8_t crcTable[256];
-	  
-
+	private:
+		uint8_t crcTable[256];
 	};
 
 	#endif

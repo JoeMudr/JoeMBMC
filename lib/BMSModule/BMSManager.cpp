@@ -22,6 +22,8 @@ BMSManager::BMSManager(){
     moduleReadCnt = 0;
     balancingActive = false; 
     ReadTimeout = 0;
+    polltime = 0;
+    MsgCnt = 0;
 }
 
 BMSManager::~BMSManager(){}
@@ -45,35 +47,18 @@ void BMSManager::initBMS(BMS_t BMS_Type,uint16_t IgnoreV,byte sensor, uint32_t  
     }
     switch (BMSType){
         case BMS_Tesla:
-        Tesla_renumberModulesIDs();
-        Tesla_findModules();
+            Tesla_renumberModulesIDs();
+            Tesla_findModules();
+        break;
+
+        case BMS_BMW_I3:
+        case BMS_BMW_MiniE:
+
         break;
         
         default: break;
     }
     clearFaults();
-}
-
-void BMSManager::printPackDetails(){
-    for (byte moduleNr = 0; moduleNr < MAX_MODULE_ADDR; moduleNr++){
-        if(modules[moduleNr].isExisting()){
-            SERIALCONSOLE.printf("Module #%i%s %imV",moduleNr,moduleNr<10?" ":"",modules[moduleNr].getModuleVoltage());
-            
-            for (byte cellNr = 0; cellNr < MAX_CELL_No; cellNr++){
-                uint16_t tmpV = modules[moduleNr].getCellVoltage(cellNr);
-                if(tmpV){
-                    SERIALCONSOLE.printf(" C%i: %4imV%s",cellNr+1,tmpV,balancingCells[moduleNr] & (1 << cellNr)?"*":" ");
-                }
-            }
-            for (byte senNr = 0; senNr < MAX_Temp_Sens; senNr++){
-                if (modules[moduleNr].getTemperature(senNr) > -999){
-                    SERIALCONSOLE.printf(" T%i: %.1fC",senNr+1,float(modules[moduleNr].getTemperature(senNr)) / 10);
-                }
-            }
-            SERIALCONSOLE.printf("\r\n");
-        }
-    }
-    
 }
 
 /*
@@ -90,6 +75,9 @@ CAN_Struct BMSManager::poll(){
         case BMS_VW_eGolf: 
         case BMS_VW_MEB: 
         {        
+            if(millis() - polltime < 500) break; // poll erevy 500ms
+            polltime = millis();
+
             msg = Balancing(0,false); // deactivate balancing for measurement first
             
             //Attention: CAN_Struct has to be big enough to hold all messages!
@@ -123,26 +111,44 @@ CAN_Struct BMSManager::poll(){
         break;
 
         case BMS_BMW_I3:
+        case BMS_BMW_MiniE:
         {
+            if(millis() - polltime < 50) break; // poll erevy 50ms
+            polltime = millis();
+
             msg = Balancing(0,false); // deactivate balancing for measurement first
 
-            const uint8_t finalxor[12] = {0xCF, 0xF5, 0xBB, 0x81, 0x27, 0x1D, 0x53, 0x69, 0x02, 0x38, 0x76, 0x4C};
             byte msgNr;
             for(msgNr = 0; msgNr < CAN_Struct_size; msgNr++){
-                if(!msg.Frame[msgNr].id) break; //find first unused ID.
-            }            
-            // CRC
-            unsigned char canmes[11];
-            int meslen = msg.Frame[msgNr].len + 1; //remove one for crc and add two for id bytes
-            canmes [1] = msg.Frame[msgNr].id;
-            canmes [0] = msg.Frame[msgNr].id >> 8;
+                if(!msg.Frame[msgNr].id) break; //find first unused msgNr.
+            }
 
-            for (int i = 0; i < (msg.Frame[msgNr].len - 1); i++){canmes[i + 2] = msg.Frame[msgNr].buf[i];}
-            //crc8.get_crc8(canmes, meslen, finalxor[id]);
+            byte MAX_Module_No = (BMSType == BMS_BMW_I3)? 7 : 11; // i3: 8 Modules; MiniE: 12 Modules
+            
+            for (byte ModuleNr = 0; ModuleNr <= MAX_Module_No; ModuleNr++){
+                
+                if(MsgCnt == 0x0F){MsgCnt = 0;}
+                
+                msg.Frame[msgNr].id = 0x80 + ModuleNr;
+                msg.Frame[msgNr].len = 8;
+                msg.Frame[msgNr].buf[0] = 0x68;
+                msg.Frame[msgNr].buf[1] = 0x10;
+                msg.Frame[msgNr].buf[2] = 0x00;
+                msg.Frame[msgNr].buf[3] = 0x50;
+                msg.Frame[msgNr].buf[4] = 0x00;
+                msg.Frame[msgNr].buf[5] = 0x00;
+                msg.Frame[msgNr].buf[6] = MsgCnt << 4;
+                msg.Frame[msgNr].buf[7] = BMW_CRC(msg.Frame[msgNr], ModuleNr);
+
+                MsgCnt++;
+            }
         }
         break;
 
         case BMS_Tesla:
+            if(millis() - polltime < 500) break; // poll erevy 500ms
+            polltime = millis();
+
             Balancing(0, false);
             delay(200);
             readModulesValues();   
@@ -216,6 +222,28 @@ void BMSManager::readModulesValues(CAN_message_t &msg){
     }
     // only update values if moduleNr has actually been read
     if(chkRead){ UpdateValues(); LastRead = millis();}
+}
+
+void BMSManager::printPackDetails(){
+    for (byte moduleNr = 0; moduleNr < MAX_MODULE_ADDR; moduleNr++){
+        if(modules[moduleNr].isExisting()){
+            SERIALCONSOLE.printf("Module #%i%s %imV",moduleNr,moduleNr<10?" ":"",modules[moduleNr].getModuleVoltage());
+            
+            for (byte cellNr = 0; cellNr < MAX_CELL_No; cellNr++){
+                uint16_t tmpV = modules[moduleNr].getCellVoltage(cellNr);
+                if(tmpV){
+                    SERIALCONSOLE.printf(" C%i: %4imV%s",cellNr+1,tmpV,balancingCells[moduleNr] & (1 << cellNr)?"*":" ");
+                }
+            }
+            for (byte senNr = 0; senNr < MAX_Temp_Sens; senNr++){
+                if (modules[moduleNr].getTemperature(senNr) > -999){
+                    SERIALCONSOLE.printf(" T%i: %.1fC",senNr+1,float(modules[moduleNr].getTemperature(senNr)) / 10);
+                }
+            }
+            SERIALCONSOLE.printf("\r\n");
+        }
+    }
+    
 }
 
 void BMSManager::UpdateValues(){
@@ -347,6 +375,17 @@ void BMSManager::BMW_get_CMU_ID(CAN_message_t &msg, byte &CMU, byte &Id){
     }
 }
 
+uint8_t BMSManager::BMW_CRC(CAN_message_t &msg, byte Id){
+    const uint8_t finalxor[12] = {0xCF, 0xF5, 0xBB, 0x81, 0x27, 0x1D, 0x53, 0x69, 0x02, 0x38, 0x76, 0x4C};
+    unsigned char canmes [11];
+    int meslen = msg.len + 1; //remove one for crc and add two for id bytes
+    canmes [1] = msg.id;
+    canmes [0] = msg.id >> 8;
+
+    for (int i = 0; i < (msg.len - 1); i++){canmes[i + 2] = msg.buf[i];}
+    return (crc8.get_crc8(canmes, meslen, finalxor[Id]));
+}
+
 //void printAllCSV(unsigned long timestamp, float current, int SOC){}
 uint16_t BMSManager::getHighCellVolt(){return HighCellVolt;}
 uint16_t BMSManager::getLowCellVolt(){return LowCellVolt;}
@@ -435,6 +474,7 @@ CAN_Struct BMSManager::Balancing(uint16_t balhys, bool active){
         case BMS_VW_MEB:
             BalanceMatrix = VW_Balancing();
         break;
+        case BMS_BMW_MiniE:
         case BMS_BMW_I3:
         break;
         case BMS_Tesla:
