@@ -25,7 +25,9 @@ public:
     void printAllCSV(unsigned long timestamp, float current, int SOC);
     void printPackDetails();
     uint16_t getHighCellVolt(); // in mV
+    uint16_t getHighModuleVolt(); // in mV
     uint16_t getLowCellVolt(); // in mV
+    uint16_t getLowModuleVolt(); // in mV
     int16_t getHighTemperature();
     int16_t getLowTemperature();
     uint32_t getPackVoltage(); // in mV

@@ -41,20 +41,20 @@ FilterOnePole lowpassFilter( LOWPASS, filterFrequency );
 
 //BMC wiring//
 //#define doesn't work here because Pins are used in Arrays below.
-const byte ACUR2 = A0; // current 1
-const byte ACUR1 = A1; // current 2
-const byte IN1_Key = 19; // input 1 - high active
-const byte IN2_Gen = 18; // input 2 - high active
-const byte IN3_AC = 20; // input 3 - high active
-const byte IN4 = 21; // input 4 - high active
-const byte OUT1 = 6;// output 1 - high active
-const byte OUT2 = 5;// output 2 - high active
-const byte OUT3 = 4;// output 3 - high active
-const byte OUT4 = 3;// output 4 - high active
-const byte OUT5 = 11;// output 5 - Low active / PWM
-const byte OUT6 = 12;// output 6 - Low active / PWM
-const byte OUT7 = 10; // output 7 - Low active / PWM
-const byte OUT8 = 9; // output 8 - Low active / PWM
+const byte ACUR2 = A0;      // analogue current sensor 1
+const byte ACUR1 = A1;      // analogue current sensor 2
+const byte IN1_Key = 19;    // input 1 - high active
+const byte IN2_Gen = 18;    // input 2 - high active
+const byte IN3_AC = 20;     // input 3 - high active
+const byte IN4 = 21;        // input 4 - high active
+const byte OUT1 = 6;        // output 1 - high active
+const byte OUT2 = 5;        // output 2 - high active
+const byte OUT3 = 4;        // output 3 - high active
+const byte OUT4 = 3;        // output 4 - high active
+const byte OUT5 = 11;       // output 5 - Low active / PWM
+const byte OUT6 = 12;       // output 6 - Low active / PWM
+const byte OUT7 = 10;       // output 7 - Low active / PWM
+const byte OUT8 = 9;        // output 8 - Low active / PWM
 const byte LED = 13;
 
 uint32_t LED_Timer = 0;
@@ -399,7 +399,7 @@ void loop(){
 
   if (!debug_Output){
     if (settings.ESSmode){BMC_Stat = ESS_CondCheck(BMC_Stat);}
-    else{BMC_Stat = Vehicle_CondCheck(BMC_Stat);}
+    else {BMC_Stat = Vehicle_CondCheck(BMC_Stat);}
     set_BMC_Status(BMC_Stat);
     set_OUTs();
   }
@@ -582,7 +582,7 @@ byte Vehicle_CondCheck(byte tmp_status){
   // Set Error depending on Error conditions, except Undervoltage to let Charging recover from Undervoltage
   // Undertemp is no Error in Drive & Charge (--> derate)
   //[ToDO] Fix Tlow --> "Separate temperaturer thresholds for charge / discharge #18 "
-  if (alarm[0] & 0b01010001 || /*((alarm[1] & 0x01) && (tmp_status != Stat_Drive || tmp_status != Stat_Precharge || tmp_status != Stat_Charge)) ||*/ alarm[3] & 0b00000001){tmp_status = Stat_Error;}
+  if (alarm[0] & 0b01000101 || /*((alarm[1] & 0x01) && (tmp_status != Stat_Drive || tmp_status != Stat_Precharge || tmp_status != Stat_Charge)) ||*/ alarm[3] & 0b00000001){tmp_status = Stat_Error;}
 
 
   // reset Error-Timer
@@ -599,13 +599,18 @@ byte ESS_CondCheck(byte tmp_status){
     //[ToDo] storagemode
   }
 
+  // detect Undervoltage before Charging / let Charging override this Error
+  if (alarm[0] & 0b00010000) {tmp_status = Stat_Error;}
+  
   if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)){
     SOC_charged();
   }
 
-  //Errors
-  if (alarm[0] & 0b01010101 || (alarm[1] & 0b00000001)  || alarm[2] & 0b01010100){tmp_status = Stat_Error;}
+  // Set Error depending on Error conditions, except Undervoltage to let Charging recover from Undervoltage
+  if (alarm[0] & 0b01000101 || (alarm[1] & 0b00000001)  || alarm[2] & 0b01010100){tmp_status = Stat_Error;}
+
   if (tmp_status != Stat_Error){error_timer = 0;}
+  
   return tmp_status;
 }
 
@@ -901,7 +906,7 @@ int32_t CAN_SEN_VictronLynx(CAN_message_t MSG){
   return Victron_milliamps;
 }
 
-void CAN_Debug_IN(CAN_message_t MSG, byte CanNr){
+void CAN_Debug_IN(byte CanNr, CAN_message_t MSG){
   int16_t pgn = 0;
   
   switch (CanNr){
@@ -1288,19 +1293,19 @@ void Menu(){
       switch (menu_option){
         case 1: settings.OverVSetpoint = menu_option_val; Menu(); break;
         case 2: settings.ChargeVSetpoint = menu_option_val; Menu(); break;
-        case 3: settings.UnderVSetpoint = menu_option_val; Menu(); break;
-        case 4: settings.UnderVDerateSetpoint = menu_option_val; Menu(); break;
+        case 3: settings.UnderVDerateSetpoint = menu_option_val; Menu(); break;
+        case 4: settings.UnderVSetpoint = menu_option_val; Menu(); break;
         case 5: settings.OverTSetpoint = menu_option_val * 10; Menu(); break;
         case 6: settings.OverTDerateSetpoint = menu_option_val * 10; Menu(); break;
         case 7: settings.UnderTSetpoint = menu_option_val * 10; Menu(); break;    
         case 8: settings.UnderTDerateSetpoint = menu_option_val * 10; Menu(); break;    
         case 9: settings.balanceVoltage = menu_option_val; Menu(); break;   
         case 10: settings.balanceHyst = menu_option_val; Menu(); break;   
-        case 11: settings.PackDisCurrentMax = menu_option_val * 10; Menu(); break;
-        case 12: settings.designCAP = menu_option_val; Menu(); break;
-        case 13: settings.CAP = menu_option_val; Menu(); break;
-        case 14: settings.Pstrings = menu_option_val; Menu(); break;     
-        case 15: settings.Scells = menu_option_val; Menu(); break;  
+        case 11: settings.designCAP = menu_option_val; Menu(); break;
+        case 12: settings.CAP = menu_option_val; Menu(); break;
+        case 13: settings.Pstrings = menu_option_val; Menu(); break;     
+        case 14: settings.Scells = menu_option_val; Menu(); break;  
+        case 15: settings.PackDisCurrentMax = menu_option_val * 10; Menu(); break;
         case 16: settings.socvolt[0] = menu_option_val; Menu(); break;  
         case 17: settings.socvolt[1] = menu_option_val; Menu(); break; 
         case 18: settings.socvolt[2] = menu_option_val; Menu(); break;                                                               
@@ -1324,21 +1329,21 @@ void Menu(){
           SERIALCONSOLE.printf("Cell limits:\r\n");    
           SERIALCONSOLE.printf("[1] Cell Overvoltage (mV):           %4i\r\n",settings.OverVSetpoint);
           SERIALCONSOLE.printf("[2] Charge Voltage Setpoint (mV):    %4i\r\n",settings.ChargeVSetpoint);
-          SERIALCONSOLE.printf("[3] Cell Undervoltage (mV):          %4i\r\n",settings.UnderVSetpoint);
-          SERIALCONSOLE.printf("[4] Derate at Undervoltage (mV):     %4i\r\n",settings.UnderVDerateSetpoint);          
+          SERIALCONSOLE.printf("[3] Derate at Undervoltage (mV):     %4i\r\n",settings.UnderVDerateSetpoint);     
+          SERIALCONSOLE.printf("[4] Cell Undervoltage (mV):          %4i\r\n",settings.UnderVSetpoint);
           SERIALCONSOLE.printf("[5] Over Temperature (°C):           %4i\r\n",settings.OverTSetpoint / 10);
           SERIALCONSOLE.printf("[6] Derate at high Temperature (°C): %4i\r\n",settings.OverTDerateSetpoint / 10);
           SERIALCONSOLE.printf("[7] Under Temperature (°C):          %4i\r\n",settings.UnderTSetpoint / 10);
           SERIALCONSOLE.printf("[8] Derate at low Temperature (°C):  %4i\r\n",settings.UnderTDerateSetpoint / 10);
           SERIALCONSOLE.printf("[9] Cell Balance Voltage (mV):       %4i\r\n",settings.balanceVoltage);
           SERIALCONSOLE.printf("[10] Balance Hysteresis (mV):        %4i\r\n",settings.balanceHyst);
-          SERIALCONSOLE.printf("[11] Pack Max Discharge (A):         %4i\r\n",settings.PackDisCurrentMax / 10);
           SERIALCONSOLE.printf("\r\n");
           SERIALCONSOLE.printf("Pack configuration:\r\n");         
-          SERIALCONSOLE.printf("[12] Pack Design Capacity (Ah):  %4i\r\n",settings.designCAP);
-          SERIALCONSOLE.printf("[13] Pack current Capacity (Ah): %4i\r\n",settings.CAP); 
-          SERIALCONSOLE.printf("[14] Cells in Parallel:          %4i\r\n",settings.Pstrings);
-          SERIALCONSOLE.printf("[15] Cells in Series:            %4i\r\n",settings.Scells );
+          SERIALCONSOLE.printf("[11] Pack Design Capacity (Ah):  %4i\r\n",settings.designCAP);
+          SERIALCONSOLE.printf("[12] Pack current Capacity (Ah): %4i\r\n",settings.CAP); 
+          SERIALCONSOLE.printf("[13] Cells in Parallel:          %4i\r\n",settings.Pstrings);
+          SERIALCONSOLE.printf("[14] Cells in Series:            %4i\r\n",settings.Scells );
+          SERIALCONSOLE.printf("[15] Pack Max Discharge (A):     %4i\r\n",settings.PackDisCurrentMax / 10);
           SERIALCONSOLE.printf("\r\n");
           SERIALCONSOLE.printf("Voltage based SOC:\r\n");
           SERIALCONSOLE.printf("[16] Setpoint1 (mV):        %4i\r\n",settings.socvolt[0]);
@@ -1911,19 +1916,22 @@ void CAN_read(){
     if (settings.cursens == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 1){CAN_SEN_read(MSG, currentact);}
     if (settings.mctype && settings.CAN_Map[0][CAN_MC] & 1){CAN_MC_read(MSG);}
     if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 1){bms.readModulesValues(MSG); BMSLastRead = millis();}
-    if (debug_CAN1){CAN_Debug_IN(MSG, 1);}
+    if (settings.CAN_Map[0][CAN_BMC_HV] & 1){CAN_BMC_HV_send(1, MSG);}
+    if (debug_CAN1){CAN_Debug_IN(1, MSG);}
   }
   while (can2.read(MSG)){
     if (settings.cursens == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 2){CAN_SEN_read(MSG, currentact);}
     if (settings.mctype && settings.CAN_Map[0][CAN_MC] & 2){CAN_MC_read(MSG);}
     if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 2){bms.readModulesValues(MSG); BMSLastRead = millis();}
-    if (debug_CAN2){CAN_Debug_IN(MSG, 2);}
+    if (settings.CAN_Map[0][CAN_BMC_HV] & 2){CAN_BMC_HV_send(2, MSG);}
+    if (debug_CAN2){CAN_Debug_IN(2, MSG);}
   }
 }
 
-void CAN_BMC_Std_send(byte CAN_Nr) //BMC CAN Messages
+void CAN_BMC_Std_send(byte CAN_Nr) //BMC standard CAN Messages
 {
   CAN_message_t MSG;
+
   MSG.id  = 0x351;
   MSG.len = 8;
   if (storagemode){
@@ -1942,8 +1950,8 @@ void CAN_BMC_Std_send(byte CAN_Nr) //BMC CAN Messages
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
 
+  delay(2);
   MSG.id  = 0x355;
-  MSG.len = 8;
   MSG.buf[0] = lowByte(SOC);
   MSG.buf[1] = highByte(SOC);
   MSG.buf[2] = lowByte(SOH_calc());
@@ -1955,8 +1963,8 @@ void CAN_BMC_Std_send(byte CAN_Nr) //BMC CAN Messages
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
 
+  delay(2);
   MSG.id  = 0x356;
-  MSG.len = 8;
   MSG.buf[0] = lowByte(uint16_t(round(double(bms.getPackVoltage()) / 10)));
   MSG.buf[1] = highByte(uint16_t(round(double(bms.getPackVoltage()) / 10)));
   MSG.buf[2] = lowByte(int32_t(round(double(currentact) / 100))); // [ToDo] values > ~6500A will overflow!
@@ -1974,7 +1982,6 @@ void CAN_BMC_Std_send(byte CAN_Nr) //BMC CAN Messages
   //SMA Alarms & Warnings
   delay(2);
   MSG.id  = 0x35A;
-  MSG.len = 8;
   MSG.buf[0] = alarm[0];
   MSG.buf[1] = alarm[1];
   MSG.buf[2] = alarm[2];
@@ -1986,8 +1993,8 @@ void CAN_BMC_Std_send(byte CAN_Nr) //BMC CAN Messages
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
 
+  delay(2);
   MSG.id  = 0x35E;
-  MSG.len = 8;
   MSG.buf[0] = bmcname[0];
   MSG.buf[1] = bmcname[1];
   MSG.buf[2] = bmcname[2];
@@ -2001,7 +2008,6 @@ void CAN_BMC_Std_send(byte CAN_Nr) //BMC CAN Messages
 
   delay(2);
   MSG.id  = 0x370;
-  MSG.len = 8;
   MSG.buf[0] = bmcmanu[0];
   MSG.buf[1] = bmcmanu[1];
   MSG.buf[2] = bmcmanu[2];
@@ -2035,9 +2041,8 @@ void CAN_BMC_Std_send(byte CAN_Nr) //BMC CAN Messages
    if(CAN_Nr & 2){can2.write(MSG);}
   }
 */
- delay(2);
+  delay(2);
   MSG.id  = 0x372;
-  MSG.len = 8;
   MSG.buf[0] = lowByte(bms.getNumModules());
   MSG.buf[1] = highByte(bms.getNumModules());
   MSG.buf[2] = 0x00;
@@ -2051,7 +2056,6 @@ void CAN_BMC_Std_send(byte CAN_Nr) //BMC CAN Messages
 
   delay(2);
   MSG.id  = 0x373;
-  MSG.len = 8;
   MSG.buf[0] = lowByte(uint16_t(bms.getLowCellVolt() * 1000));
   MSG.buf[1] = highByte(uint16_t(bms.getLowCellVolt() * 1000));
   MSG.buf[2] = lowByte(uint16_t(bms.getHighCellVolt() * 1000));
@@ -2065,7 +2069,6 @@ void CAN_BMC_Std_send(byte CAN_Nr) //BMC CAN Messages
 
   delay(2);
   MSG.id  = 0x379; //Installed capacity
-  MSG.len = 2;
   MSG.buf[0] = lowByte(uint16_t(settings.Pstrings * settings.CAP));
   MSG.buf[1] = highByte(uint16_t(settings.Pstrings * settings.CAP));
   MSG.buf[2] = 0x00;
@@ -2076,6 +2079,171 @@ void CAN_BMC_Std_send(byte CAN_Nr) //BMC CAN Messages
   MSG.buf[7] = 0x00;
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
+}
+
+void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
+  byte BMC_Addr = 1; //[ToDo] Initial testing. Assign address globally -> settings.
+  
+  if(inMSG.id == 0x4200 && inMSG.buf[0] == 0){ // Broadcast from Inverter asking for System Data
+    
+    CAN_message_t MSG;
+    MSG.len = 8;
+    MSG.flags.extended = true;
+
+    MSG.id  = 0x4210 + BMC_Addr;
+    MSG.buf[0] = lowByte(uint16_t(round(double(bms.getPackVoltage()) / 100)));
+    MSG.buf[1] = highByte(uint16_t(round(double(bms.getPackVoltage()) / 100)));
+    MSG.buf[2] = lowByte(int32_t(round(double(currentact) / 100))); // [ToDo] values > ~6500A will overflow!
+    MSG.buf[3] = highByte(int32_t(round(double(currentact) / 100)));
+    MSG.buf[4] = lowByte(int16_t(bms.getAvgTemperature() * 10));
+    MSG.buf[5] = highByte(int16_t(bms.getAvgTemperature() * 10));
+    MSG.buf[6] = SOC;
+    MSG.buf[7] = SOH_calc();
+    if(CAN_Nr & 1){can1.write(MSG);}
+    if(CAN_Nr & 2){can2.write(MSG);}
+
+    delay(2);
+    MSG.id  = 0x4220 + BMC_Addr;
+    if (storagemode){
+      MSG.buf[0] = lowByte(uint16_t(round(float(settings.StoreVsetpoint) / 100 * settings.Scells)));
+      MSG.buf[1] = highByte(uint16_t(round(float(settings.StoreVsetpoint) / 100 * settings.Scells)));    
+    }else{
+      MSG.buf[0] = lowByte(uint16_t(round(float(settings.ChargeVSetpoint) / 100 * settings.Scells)));
+      MSG.buf[1] = highByte(uint16_t(round(float(settings.ChargeVSetpoint) / 100 * settings.Scells)));
+    }
+    MSG.buf[2] = lowByte(uint16_t(round(float(settings.UnderVDerateSetpoint) / 100 * settings.Scells)));
+    MSG.buf[3] = highByte(uint16_t(round(float(settings.UnderVDerateSetpoint) / 100 * settings.Scells)));
+    MSG.buf[4] = lowByte(chargecurrent);
+    MSG.buf[5] = highByte(chargecurrent);
+    MSG.buf[6] = lowByte(discurrent);
+    MSG.buf[7] = highByte(discurrent);
+    if(CAN_Nr & 1){can1.write(MSG);}
+    if(CAN_Nr & 2){can2.write(MSG);}
+
+    delay(2);
+    MSG.id  = 0x4230 + BMC_Addr;
+    MSG.buf[0] = lowByte(bms.getLowCellVolt());
+    MSG.buf[1] = highByte(bms.getLowCellVolt());
+    MSG.buf[2] = lowByte(bms.getHighCellVolt());
+    MSG.buf[3] = highByte(bms.getHighCellVolt());
+    MSG.buf[4] = 0; // MAX Single Battery Cell Voltage Number [ToDo]
+    MSG.buf[5] = 0; // MAX Single Battery Cell Voltage Number [ToDo]
+    MSG.buf[6] = 0; // MIN Single Battery Cell Voltage Number [ToDo]
+    MSG.buf[7] = 0; // MIN Single Battery Cell Voltage Number [ToDo]
+    if(CAN_Nr & 1){can1.write(MSG);}
+    if(CAN_Nr & 2){can2.write(MSG);}
+
+    delay(2);
+    MSG.id  = 0x4230 + BMC_Addr;
+    MSG.buf[0] = lowByte(uint16_t(bms.getHighTemperature() + 100));
+    MSG.buf[1] = highByte(uint16_t(bms.getHighTemperature() + 100));
+    MSG.buf[2] = lowByte(uint16_t(bms.getLowTemperature() + 100));
+    MSG.buf[3] = highByte(uint16_t(bms.getLowTemperature() + 100));
+    MSG.buf[4] = 0; // MAX Single Battery Cell Temperature Number [ToDo]
+    MSG.buf[5] = 0; // MAX Single Battery Cell Temperature Number [ToDo]
+    MSG.buf[6] = 0; // MIN Single Battery Cell Temperature Number [ToDo]
+    MSG.buf[7] = 0; // MIN Single Battery Cell VolTemperaturetage Number [ToDo]
+    if(CAN_Nr & 1){can1.write(MSG);}
+    if(CAN_Nr & 2){can2.write(MSG);}
+
+    // Errors & Alarms [ToDo]
+    delay(2);
+    uint16_t tmpAlarm = 0;
+    uint16_t tmp = 0;
+    tmp = (alarm[0] & 0b00010000) >> 4; // Bit0: Cell low Volt
+    tmpAlarm |= tmp;
+    tmp = (alarm[0] & 0b00000100) >> 1; // Bit1: Cell high Volt
+    tmpAlarm |= tmp;
+    tmp = (alarm[0] & 0b00010000) >> 2; // Bit2: Discharge low Volt
+    tmpAlarm |= tmp;
+    tmp = (alarm[0] & 0b00000100);      // Bit3: Charge high Volt
+    tmpAlarm |= tmp;
+    tmp = (alarm[1] & 0b00000001) << 3; // Bit4: Charge Cell low Temp
+    tmpAlarm |= tmp;
+    tmp = (alarm[0] & 0b01000000) >> 2; // Bit5: Charge Cell high Temp
+    tmpAlarm |= tmp;
+    tmp = (alarm[1] & 0b00000001) << 5; // Bit6: Discharge Cell low Temp
+    tmpAlarm |= tmp;
+    tmp = (alarm[0] & 0b01000000);      // Bit7: Discharge Cell high Temp
+    tmpAlarm |= tmp;
+    tmp = 0b00000000; // Bit8: Charge Overcurrent [ToDo]
+    tmpAlarm |= tmp;
+    tmp = 0b01000000; // Bit9: Discharge Overcurrent [ToDo]
+    tmpAlarm |= tmp;
+
+    MSG.id  = 0x4250 + BMC_Addr;
+    MSG.buf[0] = 0b00000011; // bit0-2: 0 = sleep, 1 = Charge, 2 = Discharge, 3 = Idle; Bit3: Force Charge; Bit4: Force Balance Charge; Bit5-7: Reserved; [ToDo]
+    MSG.buf[1] = 0; // Cycle Period?
+    MSG.buf[2] = 0; // Cycle Period?
+    MSG.buf[3] = 0; // Error
+    MSG.buf[4] = lowByte(tmpAlarm); // Alarm
+    MSG.buf[5] = highByte(tmpAlarm); // Alarm
+    MSG.buf[6] = 0; // Protection same as Alarm?
+    MSG.buf[7] = 0; // Protection same as Alarm?
+    if(CAN_Nr & 1){can1.write(MSG);}
+    if(CAN_Nr & 2){can2.write(MSG);}
+
+    MSG.id  = 0x4260 + BMC_Addr; // Module Voltage MIN / MAX & Nr.
+    MSG.id  = 0x4270 + BMC_Addr; // Module Temp. MIN / MAX & Nr.
+    MSG.id  = 0x4280 + BMC_Addr; // Charge / Dischage foorbidden ?
+  }
+
+  if(inMSG.id == 0x4200 && inMSG.buf[0] == 2){ // Broadcast from Inverter asking for System Information
+    CAN_message_t MSG;
+    MSG.len = 8;
+    MSG.flags.extended = true;
+
+    MSG.id = 0x7310 + BMC_Addr;
+    MSG.buf[0] = 0; // Version 1=A, 2=B
+    MSG.buf[1] = 0; // reserved
+    MSG.buf[2] = 3; // Hardware Version e.g. 3.2
+    MSG.buf[3] = 2; // Hardware Version e.g. 3.2
+    MSG.buf[4] = 3; // Software Version e.g. 3.4 (03/2024)
+    MSG.buf[5] = 4; // Software Version e.g. 3.4 (03/2024)
+    MSG.buf[6] = 0; // Software Version ??
+    MSG.buf[7] = 0; // Software Version ??
+    if(CAN_Nr & 1){can1.write(MSG);}
+    if(CAN_Nr & 2){can2.write(MSG);}
+
+    delay(2);
+    MSG.id = 0x7320 + BMC_Addr;
+    MSG.buf[0] = lowByte(bms.getNumModules());
+    MSG.buf[0] = highByte(bms.getNumModules());
+    MSG.buf[2] = bms.getNumModules();
+    MSG.buf[3] = 0; // [ToDo] Cells per module
+    MSG.buf[4] = 0; // Volage Level?
+    MSG.buf[5] = 0; // Volage Level?
+    MSG.buf[6] = 0; // AH Number?
+    MSG.buf[7] = 0; // AH NUmber?
+    if(CAN_Nr & 1){can1.write(MSG);}
+    if(CAN_Nr & 2){can2.write(MSG);}
+
+    delay(2);
+    MSG.id = 0x7330 + BMC_Addr;
+    MSG.buf[0] = bmcname[0];
+    MSG.buf[1] = bmcname[1];
+    MSG.buf[2] = bmcname[2];
+    MSG.buf[3] = bmcname[3];
+    MSG.buf[4] = bmcname[4];
+    MSG.buf[5] = bmcname[5];
+    MSG.buf[6] = bmcname[6];
+    MSG.buf[7] = bmcname[7];
+    if(CAN_Nr & 1){can1.write(MSG);}
+    if(CAN_Nr & 2){can2.write(MSG);}
+
+    delay(2);
+    MSG.id = 0x7340 + BMC_Addr;
+    MSG.buf[0] = 0;
+    MSG.buf[1] = 0;
+    MSG.buf[2] = 0;
+    MSG.buf[3] = 0;
+    MSG.buf[4] = 0;
+    MSG.buf[5] = 0;
+    MSG.buf[6] = 0;
+    MSG.buf[7] = 0;
+    if(CAN_Nr & 1){can1.write(MSG);}
+    if(CAN_Nr & 2){can2.write(MSG);}
+  }
 }
 
 void CAN_Charger_Send(byte CAN_Nr){
