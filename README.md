@@ -6,4 +6,4 @@ This project is derived from [Toms SimpBMS code](https://github.com/Tom-evnut). 
 
 Complete documentation coming soon. 
 
-Latest Version can be downloaded [here](https://github.com/JoeMudr/JoeMBMC/blob/main/Bin/firmware.hex).
+Latest Version can be downloaded [here](https://github.com/JoeMudr/JoeMBMC/blob/main/Bin).
