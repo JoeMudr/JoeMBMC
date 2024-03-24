@@ -70,12 +70,12 @@ CAN_Struct BMSManager::poll(){
     // reset BMS if last module read took too long.
     CAN_Struct msg;
     msg = clearCANStruct();
-    moduleReadCnt = 0;
     switch (BMSType){
         case BMS_VW_eGolf: 
         case BMS_VW_MEB: 
         {        
             if(millis() - polltime < 500) break; // poll erevy 500ms
+            moduleReadCnt = 0;
             polltime = millis();
 
             msg = Balancing(0,false); // deactivate balancing for measurement first
@@ -114,6 +114,7 @@ CAN_Struct BMSManager::poll(){
         case BMS_BMW_MiniE:
         {
             if(millis() - polltime < 50) break; // poll erevy 50ms
+            moduleReadCnt = 0;
             polltime = millis();
 
             msg = Balancing(0,false); // deactivate balancing for measurement first
@@ -147,6 +148,7 @@ CAN_Struct BMSManager::poll(){
 
         case BMS_Tesla:
             if(millis() - polltime < 500) break; // poll erevy 500ms
+            moduleReadCnt = 0;
             polltime = millis();
 
             Balancing(0, false);
@@ -472,7 +474,7 @@ CAN_Struct BMSManager::Balancing(uint16_t balhys, bool active){
 
     // check if all messages for module values have been received. If not, do not balance!
     if(moduleReadCnt != getNumModules()){
-        SERIALCONSOLE.printf("not all messages recieved! %i/%i",moduleReadCnt,numFoundModules);
+        SERIALCONSOLE.printf(" not all messages recieved! %i/%i",moduleReadCnt,numFoundModules);
         return BalanceMatrix;
     }
 
