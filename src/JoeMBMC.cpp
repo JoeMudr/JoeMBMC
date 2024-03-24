@@ -1689,7 +1689,15 @@ void Menu(){
 }
 
 void Serial_clear(){
-  for (byte i = 0; i < 40; i++){SERIALCONSOLE.printf("\r\n");}
+  // Form feed
+  SERIALCONSOLE.write(12);
+  
+  // ESC + Clear
+  //SERIALCONSOLE.write(27);
+  //SERIALCONSOLE.printf("[2J");
+  
+  // bunch of new lines
+  //for (byte i = 0; i < 40; i++){SERIALCONSOLE.printf("\r\n");}
 }
 
 int16_t pgnFromCANId(int16_t canId){ //Parameter Group Number
@@ -1848,8 +1856,8 @@ void Dash_update(){
   
   Nextion_send("soc.val=", SOC);
   Nextion_send("soc1_gauge.val=", SOC);
-  Nextion_send("ah.val=", int(round(double(mampsecond) / 3600000)));
-  Nextion_send("current.val=", int(round(double(currentact) / 100)));
+  Nextion_send("ah.val=", int(round(double(mampsecond) / 36000)));
+  Nextion_send("current.val=", int(currentact));
   Nextion_send("power.val=", dashpower);
   Nextion_send("temp.val=", bms.getAvgTemperature());
   Nextion_send("temp1.val=", dashtemp);
