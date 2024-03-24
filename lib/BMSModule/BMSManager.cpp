@@ -586,8 +586,6 @@ CAN_Struct BMSManager::BMW_Balancing(){
     CAN_Struct BalanceMatrix;
     BalanceMatrix = clearCANStruct();
     uint8_t balance_Bitmask = 0; //bit 0 - 5 are to activate cell balancing 1-6 etc.
-
-
 }
 
 void BMSManager::Tesla_renumberModulesIDs(){

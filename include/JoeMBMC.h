@@ -16,13 +16,12 @@ void can1_start();
 void can2_start();
 void CAN_read();
 void CAN_MC_read(CAN_message_t MSG);
-//template<CAN_DEV_TABLE _bus>
-//void CAN_BMC_send(FlexCAN_T4<_bus> &CanNr);
-void CAN_BMC_send(byte CAN_Nr);
+void CAN_BMC_Std_send(byte CAN_Nr);
+void CAN_BMC_HV_send(byte CAN_Nr);
 void CAN_Charger_Send(byte CAN_Nr);
 void CAN_Debug_IN(CAN_message_t MSG, byte CanNr);
 void CAN_Debug_OUT();
-uint32_t CAN_SEN_read(CAN_message_t MSG);
+void CAN_SEN_read(CAN_message_t MSG, int32_t& CurrentAct);
 signed long CAN_SEN_LEMCAB(CAN_message_t MSG);
 signed long CAN_SEN_VictronLynx(CAN_message_t MSG);
 bool CO_NMT(uint32_t CO_Target_ID, uint8_t CO_Target_State);

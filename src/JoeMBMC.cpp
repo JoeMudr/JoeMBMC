@@ -443,10 +443,10 @@ void loop(){
     //if (debug_CSV){ bms.printAllCSV(millis(), currentact, SOC); }
     if (debug_Input){ Input_Debug(); }
     if (debug_Output){ Output_debug(); }
-    else{ Gauge_update(); } //WDT tripped?!
+    else{ Gauge_update(); }
     
     SOC_update();
-    CAN_BMC_send(settings.CAN_Map[0][CAN_BMC]);
+    if(settings.CAN_Map[0][CAN_BMC_std]){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);} // send unconditionally
     
     Currentavg_Calc();
 
@@ -842,8 +842,9 @@ uint32_t SEN_AnalogueRead(int32_t tmp_currrentlast){
 
 } 
 
-uint32_t CAN_SEN_read(CAN_message_t MSG){
-  int32_t CANmilliamps = 0;
+void CAN_SEN_read(CAN_message_t MSG, int32_t& CANmilliamps){
+  //int32_t CANmilliamps = 0;
+  bool newVal = true;
   switch (MSG.id){
     //LEM CAB
     // [ToTest] CAB1500 has same ID. ALso same Data?
@@ -861,15 +862,16 @@ uint32_t CAN_SEN_read(CAN_message_t MSG){
     case 0x521: CANmilliamps = MSG.buf[5] + (MSG.buf[4] << 8) + (MSG.buf[3] << 16) + (MSG.buf[2] << 24); break;
     case 0x522: ISAVoltage1 = MSG.buf[5] + (MSG.buf[4] << 8) + (MSG.buf[3] << 16) + (MSG.buf[2] << 24); break;
     case 0x523: ISAVoltage2 = MSG.buf[5] + (MSG.buf[4] << 8) + (MSG.buf[3] << 16) + (MSG.buf[2] << 24); break;    
-    default: break;
+    default: newVal = false; break;
   }
 
   //Victron Lynx  
   if (pgnFromCANId(MSG.id) == 0x1F214 && MSG.buf[0] == 0) // Check PGN and only use the first packet of each sequence
   {CANmilliamps = CAN_SEN_VictronLynx(MSG);}
+  else {newVal = false;}
 
-  if (settings.invertcur){ CANmilliamps *= -1; }
-  return CANmilliamps;
+  if (settings.invertcur && newVal){ CANmilliamps *= -1; }
+  //return CANmilliamps;
 }
 
 int32_t CAN_SEN_LEMCAB(CAN_message_t MSG){
@@ -1583,15 +1585,16 @@ void Menu(){
         case 2: debug_CAN1 = !debug_CAN1; Menu(); break;
         case 3: settings.CAN2_Speed = menu_option_val * 1000; can2_start(); Menu(); break;  
         case 4: debug_CAN2 = !debug_CAN2; Menu(); break;
-        case 5: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_BMC] = menu_option_val;} Menu(); break;
-        case 6: settings.CAN_Map[1][0] = constrain(menu_option_val,0,255); Menu(); break;
+        case 5: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_BMC_std] = menu_option_val;} Menu(); break;
+        case 6: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_BMC_HV] = menu_option_val;} Menu(); break;
+        //case 7: settings.CAN_Map[1][0] = constrain(menu_option_val,0,255); Menu(); break;
         case 7: if(menu_option_val >= 0 && menu_option_val < 3){settings.CAN_Map[0][CAN_BMS] = menu_option_val;} // 3 not allowed. Only CAN1 or CAN2. Not both.
           Menu(); break;
-        case 8: settings.CAN_Map[1][1] = constrain(menu_option_val,0,255); Menu(); break;        
-        case 9: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_Charger] = menu_option_val;} Menu(); break;
-        case 10: settings.CAN_Map[1][2] = constrain(menu_option_val,0,255); Menu(); break;        
-        case 11: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_Curr_Sen] = menu_option_val;} Menu(); break;
-        case 12: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_MC] = menu_option_val;} Menu(); break;
+        //case 9: settings.CAN_Map[1][1] = constrain(menu_option_val,0,255); Menu(); break;        
+        case 8: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_Charger] = menu_option_val;} Menu(); break;
+        //case 11: settings.CAN_Map[1][2] = constrain(menu_option_val,0,255); Menu(); break;        
+        case 9: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_Curr_Sen] = menu_option_val;} Menu(); break;
+        case 10: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_MC] = menu_option_val;} Menu(); break;
         case 111: //CO_Send_SDO(0x26,2,0,0x1800,0x02,0); // "o" for SDO
         break;
         case 112: //CO_SDO_send_test(0x26); // "p" for PDO
@@ -1607,15 +1610,17 @@ void Menu(){
           SERIALCONSOLE.printf("[4] Debug CAN2: %s\r\n",debug_CAN2?"ON":"OFF");
           SERIALCONSOLE.printf("\r\n");
           SERIALCONSOLE.printf("Functions:\r\n");
-          for (byte i = 0; i < 5; i++){
-            byte pos = (i+5)*2-5;
+          for (byte i = 0; i < CAN_MAP_MAX; i++){
+            //byte pos = (i+5)*2-5;
+            byte pos = i+5;
             SERIALCONSOLE.printf("[%i] %s",pos,pos<10?" ":"");
             switch (i){
-              case 0: SERIALCONSOLE.printf("BMC Data Output:  "); break;
-              case 1: SERIALCONSOLE.printf("BMS:              "); break;
-              case 2: SERIALCONSOLE.printf("Charger:          "); break;
-              case 3: SERIALCONSOLE.printf("Current Sensor:   "); break;
-              case 4: SERIALCONSOLE.printf("Motor Controller: "); break;
+              case 0: SERIALCONSOLE.printf("BMC Std:          "); break;
+              case 1: SERIALCONSOLE.printf("BMC HV:           "); break;
+              case 2: SERIALCONSOLE.printf("BMS:              "); break;
+              case 3: SERIALCONSOLE.printf("Charger:          "); break;
+              case 4: SERIALCONSOLE.printf("Current Sensor:   "); break;
+              case 5: SERIALCONSOLE.printf("Motor Controller: "); break;
             }
             switch (settings.CAN_Map[0][i]){
               case 0: SERIALCONSOLE.printf("%11s\r\n","undefined"); break;
@@ -1625,7 +1630,7 @@ void Menu(){
             }
             if (i < 3){
               pos = (i+5)*2-4;
-              SERIALCONSOLE.printf("[%i] %sInterval:         %9ims\r\n",pos,pos<10?" ":"",settings.CAN_Map[1][i]);
+              //SERIALCONSOLE.printf("[%i] %sInterval:         %9ims\r\n",pos,pos<10?" ":"",settings.CAN_Map[1][i]);
             }
           }
           SERIALCONSOLE.printf("\r\n");
@@ -1892,20 +1897,20 @@ void CAN_read(){
   CAN_message_t MSG;
 
   while (can1.read(MSG)){
-    if (settings.cursens == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 1){currentact =  CAN_SEN_read(MSG);}
+    if (settings.cursens == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 1){CAN_SEN_read(MSG, currentact);}
     if (settings.mctype && settings.CAN_Map[0][CAN_MC] & 1){CAN_MC_read(MSG);}
     if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 1){bms.readModulesValues(MSG); BMSLastRead = millis();}
     if (debug_CAN1){CAN_Debug_IN(MSG, 1);}
   }
   while (can2.read(MSG)){
-    if (settings.cursens == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 2){currentact =  CAN_SEN_read(MSG);}
+    if (settings.cursens == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 2){CAN_SEN_read(MSG, currentact);}
     if (settings.mctype && settings.CAN_Map[0][CAN_MC] & 2){CAN_MC_read(MSG);}
     if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 2){bms.readModulesValues(MSG); BMSLastRead = millis();}
     if (debug_CAN2){CAN_Debug_IN(MSG, 2);}
   }
 }
 
-void CAN_BMC_send(byte CAN_Nr) //BMC CAN Messages
+void CAN_BMC_Std_send(byte CAN_Nr) //BMC CAN Messages
 {
   CAN_message_t MSG;
   MSG.id  = 0x351;

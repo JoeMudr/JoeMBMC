@@ -69,13 +69,14 @@ enum {Menu_Start, Menu_Main, Menu_Battery, Menu_CurSen, Menu_Charger, Menu_MC, M
 
 /*
 CAN mapping
-CAN_BMC       // general BMC-Output
+CAN_BMC_std   // general BMC-Output SMA/Victron/Polyontech
+CAN_BMC_HV    // general BMC-Output Polyontech HV
 CAN_BMS       // Control of OEM Battery Managment Boards
 CAN_Charger   // Charger control
 CAN_Curr_Sen  // Current Sensor Bus
 CAN_MC        // Motor Controller
 */
-enum {CAN_BMC, CAN_BMS, CAN_Charger, CAN_Curr_Sen, CAN_MC};
+enum {CAN_BMC_std, CAN_BMC_HV, CAN_BMS, CAN_Charger, CAN_Curr_Sen, CAN_MC, CAN_MAP_MAX};
 
 typedef struct {
   byte version;
@@ -144,5 +145,5 @@ typedef struct {
   uint32_t CAN2_Speed;
   uint16_t CAN1_Interval;
   uint16_t CAN2_Interval;
-  byte CAN_Map[2][5]; // index[0]: 0 = BMC-Output; 1 = BMS Communication; 2 = Chargers; 3 = Current Sensors; 4 = MotorController // Values: 0 = not set; 1 = Can1; 2 = Can2; 3 = Can1 & Can2
+  byte CAN_Map[2][CAN_MAP_MAX]; // index[0]: 0 = BMC-Output_std; 1 = BMC-Output_HV; 2 = BMS Communication; 3 = Chargers; 4 = Current Sensors; 5 = MotorController // Values: 0 = not set; 1 = Can1; 2 = Can2; 3 = Can1 & Can2 // index[1] Interval
 } EEPROMSettings;
