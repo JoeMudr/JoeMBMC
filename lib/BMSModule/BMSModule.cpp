@@ -396,12 +396,13 @@ int16_t BMSModule::getAvgTemp(){
     byte TSenCount = 0;
     if (TSensor == 0){
         for (byte i = 0; i < MAX_Temp_Sens; i++){
-            if (temperatures[i] > -999){TAvg += temperatures[i];}        
-            TSenCount++;
+            if (temperatures[i] > -999){
+                TAvg += temperatures[i];
+                TSenCount++;
+            }        
         } 
     } else {TAvg = temperatures[TSensor - 1];}
     if (TSenCount > 0){TAvg /= TSenCount;}
-    
     return TAvg;
 }
 

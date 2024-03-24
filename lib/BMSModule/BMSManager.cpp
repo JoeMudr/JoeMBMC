@@ -250,17 +250,23 @@ void BMSManager::UpdateValues(){
     packVolt = 0;
     HighCellVolt = 0;
     LowCellVolt = 5000;
+    AvgCellVolt = 5000;
     highTemp = -999;
     lowTemp = 999;
-    AvgCellVolt = 5000;
+    AvgTemp = 0;
+
     uint16_t cellCnt = 0;
+    uint16_t moduleCnt = 0;
+
     for (byte moduleNr = 1; moduleNr <= MAX_MODULE_ADDR; moduleNr++){
         if(modules[moduleNr].isExisting()){
+            moduleCnt++;
             if (modules[moduleNr].getHighCellV() >  HighCellVolt)  HighCellVolt = modules[moduleNr].getHighCellV();
             if (modules[moduleNr].getLowCellV() <  LowCellVolt)  LowCellVolt = modules[moduleNr].getLowCellV();
             if (modules[moduleNr].getAvgTemp() > -70){
                 if (modules[moduleNr].getHighTemp() > highTemp){highTemp = modules[moduleNr].getHighTemp();} 
                 if (modules[moduleNr].getLowTemp() < lowTemp){lowTemp = modules[moduleNr].getLowTemp();}
+                AvgTemp = +modules[moduleNr].getAvgTemp();
             }
             packVolt += modules[moduleNr].getModuleVoltage();
             for (byte cellNr = 0; cellNr < MAX_CELL_No; cellNr++){
@@ -268,6 +274,9 @@ void BMSManager::UpdateValues(){
             }
         }
     } 
+    
+    AvgTemp = AvgTemp / moduleCnt;
+    //SERIALCONSOLE.println(AvgTemp);
     AvgCellVolt = round(packVolt / cellCnt);
 }
 

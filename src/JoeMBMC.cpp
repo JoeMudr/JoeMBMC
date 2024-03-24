@@ -372,10 +372,10 @@ void setup(){
 //called by Timer
 void mAmpsec_calc(){ 
   uint32_t nowTime = millis();
-  uint32_t tmpTime = 0;
+  float tmpTime = 0;
   int32_t tmpmampsecond = 0;
+  tmpTime = nowTime - lastTime;
   if((nowTime - lastTime) < 0){tmpTime = 4294967295 - lastTime + nowTime;} // Catch millis() overflow [ToTest]
-  else{tmpTime = nowTime - lastTime;}
   tmpmampsecond = ((currentact+currentlast)/2 * tmpTime / 1000);
   mampsecondTimer += tmpmampsecond;
   currentlast = currentact;
@@ -870,6 +870,8 @@ void CAN_SEN_read(CAN_message_t MSG, int32_t& CANmilliamps){
   {CANmilliamps = CAN_SEN_VictronLynx(MSG);}
   else {newVal = false;}
 
+  //SERIALCONSOLE.println(CANmilliamps);
+
   if (settings.invertcur && newVal){ CANmilliamps *= -1; }
   //return CANmilliamps;
 }
@@ -989,6 +991,7 @@ void SOC_update(){
         SOC = constrain(SOC_tmp, 0, 100);// keep SOC bettween 0 and 100
     }
   }
+  //SERIALCONSOLE.println(mampsecond);
 }
 
 void SOC_charged(){
