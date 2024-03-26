@@ -4,7 +4,7 @@
 void Reset_Cause(uint32_t resetStatusReg);
 void BMSInit();
 void mAmpsec_calc();
-void Alarm_Check();
+void WarnAlarm_Check();
 byte Balancing(byte active = 1);
 void BMS_Poll();
 void BMC_Status_LED();

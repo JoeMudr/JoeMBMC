@@ -191,15 +191,14 @@ String Out_Functions[] = {
 #define Out_Cooling 10
 #define Out_Gauge 11
 
-u_int32_t cont_timer = 0;
+uint32_t cont_timer = 0;
 uint32_t Out_PWM_fullpull_Timer = 0; // PWM Timer
 
 // CAN
 FlexCAN_T4<CAN1> can1;
 FlexCAN_T4<CAN2> can2;
 
-//[ToDo] rewrite CAN-Send for 2 CAN busses / CANOpen
-CAN_message_t outMsg;
+uint32_t CAN_BMC_Std_send_Timer = 0;
 
 //Debugging modes
 bool debug = 1;
@@ -395,7 +394,7 @@ void loop(){
   // make serial console available after 3s
   if (millis() > 3000 && SERIALCONSOLE.available()){Menu();} 
 
-  Alarm_Check();
+  WarnAlarm_Check();
 
   if (!debug_Output){
     if (settings.ESSmode){BMC_Stat = ESS_CondCheck(BMC_Stat);}
@@ -446,7 +445,7 @@ void loop(){
     else{ Gauge_update(); }
     
     SOC_update();
-    if(settings.CAN_Map[0][CAN_BMC_std]){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);} // send unconditionally
+    //if(settings.CAN_Map[0][CAN_BMC_std]){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);} // send unconditionally
     
     Currentavg_Calc();
 
@@ -458,7 +457,7 @@ void loop(){
   }
 
 }
-//[ToTest]
+
 /* ==================================================================== */
 // i.MX RT1060 Processor Reference Manual, 21.8.3 SRC Reset Status Register
 void Reset_Cause(uint32_t resetStatusReg) {
@@ -514,7 +513,7 @@ void BMSInit(){
   bms.initBMS(settings.BMSType,settings.IgnoreVolt,settings.useTempSensor,settings.ReadTimeout);
 }
 
-void Alarm_Check(){
+void WarnAlarm_Check(){
   //warnings
   for(byte i = 0; i<4; i++){warning[i] = 0b10101010;} // reset to all OK
 
@@ -552,6 +551,7 @@ byte Vehicle_CondCheck(byte tmp_status){
 
   // detect KEY ON & AC OFF -> Drive
   if (digitalRead(IN1_Key) == HIGH && ChargeActive() == false){
+  //if (ChargeActive() == false){
     if (precharged) {tmp_status = Stat_Drive;}
     else {tmp_status = Stat_Precharge;}
   } 
@@ -582,7 +582,7 @@ byte Vehicle_CondCheck(byte tmp_status){
   // Set Error depending on Error conditions, except Undervoltage to let Charging recover from Undervoltage
   // Undertemp is no Error in Drive & Charge (--> derate)
   //[ToDO] Fix Tlow --> "Separate temperaturer thresholds for charge / discharge #18 "
-  if (alarm[0] & 0b01000101 || /*((alarm[1] & 0x01) && (tmp_status != Stat_Drive || tmp_status != Stat_Precharge || tmp_status != Stat_Charge)) ||*/ alarm[3] & 0b00000001){tmp_status = Stat_Error;}
+  if (alarm[0] & 0b01000101 || alarm[3] & 0b00000001){tmp_status = Stat_Error;}
 
 
   // reset Error-Timer
@@ -624,7 +624,7 @@ bool ChargeActive(){
   return retVal;
 }
 
-byte Warn_handle(){
+byte Warn_Out_handle(){
   if (warning[0] & 0b01010101 || warning[1] & 0b01010101 || warning[2] & 0b01010101 || warning[3] & 0b01010101){
     set_OUT_States(Out_Err_Warn);
     set_OUT_States(Out_Warning);
@@ -649,7 +649,7 @@ void set_BMC_Status(byte status){
       precharged = 0;
       set_OUT_States(); // all off
       Balancing();
-      Warn_handle();
+      Warn_Out_handle();
     break;
     case Stat_Drive:
       set_OUT_States(); // all off
@@ -657,13 +657,15 @@ void set_BMC_Status(byte status){
       set_OUT_States(Out_Cont_Neg);
       set_OUT_States(Out_Gauge);
       DischargeCurrentLimit();
-      Warn_handle();
+      Warn_Out_handle();
       Balancing(0);
+      CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
     case Stat_Precharge:
       set_OUT_States(); // all off
       Prechargecon();
       Balancing(0);
+      CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;    
     case Stat_Charge:
       set_OUT_States(); // all off
@@ -674,14 +676,16 @@ void set_BMC_Status(byte status){
       Balancing();
       CAN_Charger_Send(settings.CAN_Map[0][CAN_Charger]);
       ChargeCurrentLimit();
-      Warn_handle();
+      Warn_Out_handle();
+      CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
     case Stat_Charged:
       set_OUT_States(); // all off
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
       Balancing();
       chargecurrentlast = 0;
-      Warn_handle();
+      Warn_Out_handle();
+      CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
     case Stat_Error:
       if (!error_timer){ error_timer = millis() + settings.error_delay; }//10s delay before turning everything off
@@ -690,6 +694,7 @@ void set_BMC_Status(byte status){
         set_OUT_States(Out_Error);
         set_OUT_States(Out_Err_Warn);
         if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
+        if (digitalRead(IN1_Key) == HIGH && ChargeActive()){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);}
         Balancing(0);
         discurrent = 0;
         chargecurrent = 0;
@@ -704,7 +709,8 @@ void set_BMC_Status(byte status){
       Balancing();
       DischargeCurrentLimit();
       ChargeCurrentLimit();
-      Warn_handle();
+      Warn_Out_handle();
+      CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
   } 
 }
@@ -745,7 +751,7 @@ void SERIALCONSOLEprint(){
     case (Stat_Error): SERIALCONSOLE.printf("Error"); break;
     case (Stat_Healthy): SERIALCONSOLE.printf("Healthy"); break;
   }
-  if (Warn_handle()){SERIALCONSOLE.printf(" (Warning!)\r\n");} else {SERIALCONSOLE.printf("\r\n");}
+  if (Warn_Out_handle()){SERIALCONSOLE.printf(" (Warning!)\r\n");} else {SERIALCONSOLE.printf("\r\n");}
 
   SERIALCONSOLE.printf("\r\nCharge Current Limit: %5.2f (%5.2f) A | DisCharge Current Limit: %5.2fA \r\n",float(chargecurrent) * settings.nchargers / 10, float(chargecurrent) / 10, float(discurrent) / 10);
   SERIALCONSOLE.printf("Vpack: %5.2fV | Vlow: %4umV | Vhigh: %4umV | DeltaV: %4umV | Tlow: %3.1f°C | Thigh: %3.1f°C\r\n",double(bms.getPackVoltage()) / 1000,bms.getLowCellVolt(),bms.getHighCellVolt(),bms.getHighCellVolt() - bms.getLowCellVolt(),float(bms.getLowTemperature()) / 10,float(bms.getHighTemperature()) / 10);
@@ -1297,8 +1303,8 @@ void Menu(){
         case 4: settings.UnderVSetpoint = menu_option_val; Menu(); break;
         case 5: settings.OverTSetpoint = menu_option_val * 10; Menu(); break;
         case 6: settings.OverTDerateSetpoint = menu_option_val * 10; Menu(); break;
-        case 7: settings.UnderTSetpoint = menu_option_val * 10; Menu(); break;    
-        case 8: settings.UnderTDerateSetpoint = menu_option_val * 10; Menu(); break;    
+        case 7: settings.UnderTDerateSetpoint = menu_option_val * 10; Menu(); break;    
+        case 8: settings.UnderTSetpoint = menu_option_val * 10; Menu(); break;    
         case 9: settings.balanceVoltage = menu_option_val; Menu(); break;   
         case 10: settings.balanceHyst = menu_option_val; Menu(); break;   
         case 11: settings.designCAP = menu_option_val; Menu(); break;
@@ -1333,8 +1339,8 @@ void Menu(){
           SERIALCONSOLE.printf("[4] Cell Undervoltage (mV):          %4i\r\n",settings.UnderVSetpoint);
           SERIALCONSOLE.printf("[5] Over Temperature (°C):           %4i\r\n",settings.OverTSetpoint / 10);
           SERIALCONSOLE.printf("[6] Derate at high Temperature (°C): %4i\r\n",settings.OverTDerateSetpoint / 10);
-          SERIALCONSOLE.printf("[7] Under Temperature (°C):          %4i\r\n",settings.UnderTSetpoint / 10);
-          SERIALCONSOLE.printf("[8] Derate at low Temperature (°C):  %4i\r\n",settings.UnderTDerateSetpoint / 10);
+          SERIALCONSOLE.printf("[7] Derate at low Temperature (°C):  %4i\r\n",settings.UnderTDerateSetpoint / 10);
+          SERIALCONSOLE.printf("[8] Under Temperature (°C):          %4i\r\n",settings.UnderTSetpoint / 10);
           SERIALCONSOLE.printf("[9] Cell Balance Voltage (mV):       %4i\r\n",settings.balanceVoltage);
           SERIALCONSOLE.printf("[10] Balance Hysteresis (mV):        %4i\r\n",settings.balanceHyst);
           SERIALCONSOLE.printf("\r\n");
@@ -1885,7 +1891,7 @@ void Dash_update(){
   uint16_t Err_Warn = 0;
   if (BMC_Stat == Stat_Error){
     Err_Warn = 63488; // red
-  } else if (Warn_handle()){
+  } else if (Warn_Out_handle()){
     Err_Warn = 65504; // yellow
   }
   Nextion_send("Err_Warn.bco=", Err_Warn);
@@ -1916,20 +1922,23 @@ void CAN_read(){
     if (settings.cursens == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 1){CAN_SEN_read(MSG, currentact);}
     if (settings.mctype && settings.CAN_Map[0][CAN_MC] & 1){CAN_MC_read(MSG);}
     if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 1){bms.readModulesValues(MSG); BMSLastRead = millis();}
-    if (settings.CAN_Map[0][CAN_BMC_HV] & 1){CAN_BMC_HV_send(1, MSG);}
+    if (settings.CAN_Map[0][CAN_BMC_HV] & 1){CAN_BMC_HV_send(1, MSG);} // Send HV CAN triggered by Inverter
     if (debug_CAN1){CAN_Debug_IN(1, MSG);}
   }
   while (can2.read(MSG)){
     if (settings.cursens == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 2){CAN_SEN_read(MSG, currentact);}
     if (settings.mctype && settings.CAN_Map[0][CAN_MC] & 2){CAN_MC_read(MSG);}
     if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 2){bms.readModulesValues(MSG); BMSLastRead = millis();}
-    if (settings.CAN_Map[0][CAN_BMC_HV] & 2){CAN_BMC_HV_send(2, MSG);}
+    if (settings.CAN_Map[0][CAN_BMC_HV] & 2){CAN_BMC_HV_send(2, MSG);} // Send HV CAN triggered by Inverter
     if (debug_CAN2){CAN_Debug_IN(2, MSG);}
   }
 }
 
-void CAN_BMC_Std_send(byte CAN_Nr) //BMC standard CAN Messages
-{
+void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
+  
+  if(CAN_BMC_Std_send_Timer + 1000 >= millis()){return;} // Timer 1s;
+  if(!CAN_Nr){return;} // No CanNr. set.
+
   CAN_message_t MSG;
 
   MSG.id  = 0x351;
@@ -1969,14 +1978,14 @@ void CAN_BMC_Std_send(byte CAN_Nr) //BMC standard CAN Messages
   MSG.buf[1] = highByte(uint16_t(round(double(bms.getPackVoltage()) / 10)));
   MSG.buf[2] = lowByte(int32_t(round(double(currentact) / 100))); // [ToDo] values > ~6500A will overflow!
   MSG.buf[3] = highByte(int32_t(round(double(currentact) / 100)));
-  MSG.buf[4] = lowByte(int16_t(bms.getAvgTemperature() * 10));
-  MSG.buf[5] = highByte(int16_t(bms.getAvgTemperature() * 10));
+  MSG.buf[4] = lowByte(bms.getAvgTemperature());
+  MSG.buf[5] = highByte(bms.getAvgTemperature());
   MSG.buf[6] = 0;
   MSG.buf[7] = 0;
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
 
-  //[ToDo] Pylontech Errors & Warnings
+  //[ToDo] Pylontech Errors & Warnings / Protection
   //MSG.id = 0x359
 
   //SMA Alarms & Warnings
@@ -2055,7 +2064,7 @@ void CAN_BMC_Std_send(byte CAN_Nr) //BMC standard CAN Messages
   if(CAN_Nr & 2){can2.write(MSG);}
 
   delay(2);
-  MSG.id  = 0x373;
+  MSG.id  = 0x373; // non standard
   MSG.buf[0] = lowByte(uint16_t(bms.getLowCellVolt() * 1000));
   MSG.buf[1] = highByte(uint16_t(bms.getLowCellVolt() * 1000));
   MSG.buf[2] = lowByte(uint16_t(bms.getHighCellVolt() * 1000));
@@ -2068,7 +2077,7 @@ void CAN_BMC_Std_send(byte CAN_Nr) //BMC standard CAN Messages
   if(CAN_Nr & 2){can2.write(MSG);}
 
   delay(2);
-  MSG.id  = 0x379; //Installed capacity
+  MSG.id  = 0x379; // installed capacity, non standard
   MSG.buf[0] = lowByte(uint16_t(settings.Pstrings * settings.CAP));
   MSG.buf[1] = highByte(uint16_t(settings.Pstrings * settings.CAP));
   MSG.buf[2] = 0x00;
@@ -2079,6 +2088,8 @@ void CAN_BMC_Std_send(byte CAN_Nr) //BMC standard CAN Messages
   MSG.buf[7] = 0x00;
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
+
+  CAN_BMC_Std_send_Timer = millis();
 }
 
 void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
@@ -2389,15 +2400,5 @@ void CAN_MC_read(CAN_message_t MSG){
         //CO_PDO1_send(tmp_id);
         //CO_PDO2_send(tmp_id);
     }
-  }
-}
-
-void CAN_Debug_OUT(){
-  SERIALCONSOLE.printf("OUT: %x",outMsg.id);
-    if (outMsg.len){
-    for (byte i = 0; i < (outMsg.len + 1); i++){
-      SERIALCONSOLE.printf(" %x", outMsg.buf[i]);
-    }
-  SERIALCONSOLE.printf("\r\n");
   }
 }
