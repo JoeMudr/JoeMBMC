@@ -52,18 +52,16 @@ private:
     int16_t AvgTemp;
     int16_t highTemp;
     int16_t lowTemp;
-    uint16_t BalHys;
     byte TSensor;
     byte numFoundModules;
     byte moduleReadCnt; // count how many modules have been read
     byte balancingCells[MAX_MODULE_ADDR+1];
-    bool balancingActive;
     void VW_get_CMU_ID(CAN_message_t &msg,byte &CMU,byte &Id);
     void BMW_get_CMU_ID(CAN_message_t &msg,byte &CMU,byte &Id);
     uint8_t BMW_CRC(CAN_message_t &msg, byte Id);
-    CAN_Struct VW_Balancing();
-    CAN_Struct BMW_Balancing();
-    void Tesla_Balancing();
+    CAN_Struct VW_Balancing(uint16_t BalHys,bool active);
+    CAN_Struct BMW_Balancing(uint16_t BalHys,bool active);
+    void Tesla_Balancing(uint16_t BalHys,bool active);
     void Tesla_renumberModulesIDs(); // reset and re enumerate all Modules
     void Tesla_setupModules(); // init Modules
     void Tesla_sleepModules();

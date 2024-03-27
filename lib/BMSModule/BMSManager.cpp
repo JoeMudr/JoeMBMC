@@ -10,7 +10,6 @@ BMSManager::BMSManager(){
     LowCellVolt = 5000;
     highTemp = -999;
     lowTemp = 999;
-    BalHys = 0;
     TSensor = 0; // default use all Sensors
     packVolt = 0;
     for (int moduleNr = 1; moduleNr <= MAX_MODULE_ADDR; moduleNr++){
@@ -20,7 +19,6 @@ BMSManager::BMSManager(){
     }
     numFoundModules = 0;
     moduleReadCnt = 0;
-    balancingActive = false; 
     ReadTimeout = 0;
     polltime = 0;
     MsgCnt = 0;
@@ -464,14 +462,12 @@ void BMSManager::clearFaults(){
     }
 }
 
-CAN_Struct BMSManager::Balancing(uint16_t balhys, bool active){
-    BalHys = balhys;
-    balancingActive = active;
+CAN_Struct BMSManager::Balancing(uint16_t BalHys, bool active){
     CAN_Struct BalanceMatrix;
     BalanceMatrix = clearCANStruct();
 
     // check if all messages for module values have been received. If not, do not balance!
-    if(balancingActive && moduleReadCnt != getNumModules()){
+    if(active && moduleReadCnt != getNumModules()){
         SERIALCONSOLE.printf(" not all messages recieved! %i/%i",moduleReadCnt,numFoundModules);
         return BalanceMatrix;
     }
@@ -481,13 +477,13 @@ CAN_Struct BMSManager::Balancing(uint16_t balhys, bool active){
     switch (BMSType){
         case BMS_VW_eGolf:
         case BMS_VW_MEB:
-            BalanceMatrix = VW_Balancing();
+            BalanceMatrix = VW_Balancing(BalHys, active);
         break;
         case BMS_BMW_MiniE:
         case BMS_BMW_I3:
         break;
         case BMS_Tesla:
-            Tesla_Balancing();
+            Tesla_Balancing(BalHys, active);
         break;
 
         default: break;
@@ -495,12 +491,12 @@ CAN_Struct BMSManager::Balancing(uint16_t balhys, bool active){
     return BalanceMatrix;
 }
 
-void BMSManager::Tesla_Balancing(){
+void BMSManager::Tesla_Balancing(uint16_t BalHys,bool active){
     
     uint8_t balance_Bitmask = 0; //bit 0 - 5 are to activate cell balancing 1-6 etc.
     for (byte moduleNr = 1; moduleNr <= MAX_MODULE_ADDR; moduleNr++){ 
         if(modules[moduleNr].isExisting()){
-            if (balancingActive){
+            if (active){
                 balance_Bitmask = 0;
                 for (byte cellNr = 0; cellNr < MAX_CELL_No_Tesla; cellNr++)
                 {if (getLowCellVolt() + BalHys < modules[moduleNr].getCellVoltage(cellNr)){balance_Bitmask = balance_Bitmask | (1 << cellNr);}}
@@ -516,7 +512,7 @@ void BMSManager::Tesla_Balancing(){
     }  
 }
 
-CAN_Struct BMSManager::VW_Balancing(){
+CAN_Struct BMSManager::VW_Balancing(uint16_t BalHys,bool active){
     CAN_Struct BalanceMatrix;
     BalanceMatrix = clearCANStruct();
     uint8_t balance_Bitmask = 0; //bit 0 - 5 are to activate cell balancing 1-6 etc.
@@ -557,7 +553,7 @@ CAN_Struct BMSManager::VW_Balancing(){
                 if ((LowCellVolt + BalHys) < modules[moduleNr].getCellVoltage(i)){balance_Bitmask = balance_Bitmask | (1 << i);}
             }
             
-            if (balancingActive)  {
+            if (active)  {
                 // look for first empty message in BelanceMatrix
                 byte MessageNr;
                 for (MessageNr = 0; MessageNr < CAN_Struct_size; MessageNr++){
@@ -592,7 +588,7 @@ CAN_Struct BMSManager::VW_Balancing(){
     return BalanceMatrix;
 }
 
-CAN_Struct BMSManager::BMW_Balancing(){
+CAN_Struct BMSManager::BMW_Balancing(uint16_t BalHys,bool active){
     CAN_Struct BalanceMatrix;
     BalanceMatrix = clearCANStruct();
     uint8_t balance_Bitmask = 0; //bit 0 - 5 are to activate cell balancing 1-6 etc.
