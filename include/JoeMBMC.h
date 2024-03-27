@@ -16,6 +16,7 @@ void can1_start();
 void can2_start();
 void CAN_read();
 void CAN_MC_read(CAN_message_t MSG);
+void CAN_TCU_read(CAN_message_t MSG);
 void CAN_BMC_Std_send(byte CAN_Nr);
 void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t MSG);
 void CAN_Charger_Send(byte CAN_Nr);

@@ -29,7 +29,7 @@
 #include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
 
 /////Version Identifier/////////
-uint32_t firmver = 240324;
+uint32_t firmver = 240327;
 
 //Tesla_BMSModuleManager bms;
 BMSManager bms;
@@ -200,20 +200,26 @@ FlexCAN_T4<CAN2> can2;
 
 uint32_t CAN_BMC_Std_send_Timer = 0;
 
-//Debugging modes
+// Debugging modes
 bool debug = 1;
-bool debug_Input = 0; //read digital inputs
-bool debug_Output = 0; //check outputs
-bool debug_CAN1 = 0; //view can frames
-bool debug_CAN2 = 0; //view can frames
+bool debug_Input = 0;   // read digital inputs
+bool debug_Output = 0;  // check outputs
+bool debug_CAN1 = 0;    // view can frames
+bool debug_CAN2 = 0;    // view can frames
 bool debug_Gauge = 0;
 byte  debug_Gauge_val = 0;
 uint32_t debug_Gauge_timer = 0;
 bool debug_Cur = 0;
 bool debug_CSV = 0;
-byte debug_Digits = 2; //amount of digits behind decimal for voltage reading
+byte debug_Digits = 2; // amount of digits behind decimal for voltage reading
 
 ADC *adc = new ADC(); // adc object
+
+// TCU Variables
+byte TCU_Pump = 0;
+byte TCU_Cool = 0;
+byte TCU_Heat = 0;
+byte TCU_REL4 = 0;
 
 IntervalTimer Timer_mAmpSec;
 
@@ -462,7 +468,7 @@ void loop(){
 // i.MX RT1060 Processor Reference Manual, 21.8.3 SRC Reset Status Register
 void Reset_Cause(uint32_t resetStatusReg) {
   bool info = false;
-  SERIALCONSOLE.printf("\r\nReason for last Reset:\r\n");
+  SERIALCONSOLE.printf("\r\nReason for last Reset: ");
   if (resetStatusReg & SRC_SRSR_TEMPSENSE_RST_B) {
       Serial.printf("Temperature Sensor Software Reset\r\n");
       info = true;
@@ -791,7 +797,11 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.printf("ETA:       %2ih %2im\r\n",ETA() / 60,ETA() % 60);
   SERIALCONSOLE.printf("\r\n");
 
-  SERIALCONSOLE.printf("IN %d%d%d%d %s %s\r\n\r\n",digitalRead(IN1_Key),digitalRead(IN2_Gen),digitalRead(IN3_AC),digitalRead(IN4),ChargeActive()?"| Charger plugged":"",digitalRead(IN1_Key)?"| Key ON":"");
+  SERIALCONSOLE.printf("IN %d%d%d%d %s %s\r\n",digitalRead(IN1_Key),digitalRead(IN2_Gen),digitalRead(IN3_AC),digitalRead(IN4),ChargeActive()?"| Charger plugged":"",digitalRead(IN1_Key)?"| Key ON":"");
+  if(TCU_Pump || TCU_Cool || TCU_Heat || TCU_REL4){
+    SERIALCONSOLE.printf("TCU: %s%s%s%s\r\n",TCU_Pump-1?"Pumping ":"",TCU_Cool-1?"Cooling ":"",TCU_Heat-1?"Heating ":"",TCU_REL4-1?"REL4":"");
+  }
+  SERIALCONSOLE.printf("\r\n");
 }
 
 uint32_t ConvertToBin(byte Input){
@@ -1924,6 +1934,7 @@ void CAN_read(){
     if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 1){bms.readModulesValues(MSG); BMSLastRead = millis();}
     if (settings.CAN_Map[0][CAN_BMC_HV] & 1){CAN_BMC_HV_send(1, MSG);} // Send HV CAN triggered by Inverter
     if (debug_CAN1){CAN_Debug_IN(1, MSG);}
+    if (settings.CAN_Map[0][CAN_BMC_std]) {CAN_TCU_read(MSG);}
   }
   while (can2.read(MSG)){
     if (settings.cursens == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 2){CAN_SEN_read(MSG, currentact);}
@@ -1931,6 +1942,7 @@ void CAN_read(){
     if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 2){bms.readModulesValues(MSG); BMSLastRead = millis();}
     if (settings.CAN_Map[0][CAN_BMC_HV] & 2){CAN_BMC_HV_send(2, MSG);} // Send HV CAN triggered by Inverter
     if (debug_CAN2){CAN_Debug_IN(2, MSG);}
+    if (settings.CAN_Map[0][CAN_BMC_std]) {CAN_TCU_read(MSG);}
   }
 }
 
@@ -2400,5 +2412,15 @@ void CAN_MC_read(CAN_message_t MSG){
         //CO_PDO1_send(tmp_id);
         //CO_PDO2_send(tmp_id);
     }
+  }
+}
+
+void CAN_TCU_read(CAN_message_t MSG){
+  TCU_Pump = TCU_Cool = TCU_Heat = TCU_REL4 = 0;
+  if (MSG.id == 0xBA){
+    TCU_Pump = MSG.buf[0];
+    TCU_Cool = MSG.buf[1];
+    TCU_Heat = MSG.buf[2];
+    TCU_REL4 = MSG.buf[3];
   }
 }
