@@ -1,18 +1,18 @@
 #pragma once
 #include <Arduino.h>
 
-//Set to the proper port for your USB connection - SerialUSB on Due (Native) or Serial for Due (Programming) or Teensy
+// Set to the proper port for your USB connection - SerialUSB on Due (Native) or Serial for Due (Programming) or Teensy
 #define SERIALCONSOLE Serial
 
-//Define this to be the serial port the Tesla BMS modules are connected to.
-//On the Due you need to use a USART port (Serial1, Serial2, Serial3) and update the call to serialSpecialInit if not Serial1
-//Serial3 for teensy
+// Define this to be the serial port the Tesla BMS modules are connected to.
+// On the Due you need to use a USART port (Serial1, Serial2, Serial3) and update the call to serialSpecialInit if not Serial1
+// Serial3 for teensy 3.2; Serial 2 for Teensy 4.x
 #define SERIALBMS  Serial2
 
-// Secondary CAN / Serial
+// Secondary Serial
 #define DisplaySerial Serial4
 
-//Tesla BMS_Module Comms
+// Tesla BMS_Module Comms
 #define REG_DEV_STATUS      0
 #define REG_GPAI            1
 #define REG_VCELL1          3
@@ -34,8 +34,8 @@
 #define REG_ADC_CONV        0x34
 #define REG_ADDR_CTRL       0x3B
 
-//VW BMS_Module Comms
-//??
+// VW BMS_Module Comms
+// ??
 
 // Values for Modules
 #define MAX_MODULE_ADDR     62
@@ -45,27 +45,89 @@
 //#define MAX_CELL_No_BMW     12
 #define MAX_Temp_Sens       3
 
-#define EEPROM_VERSION      0x25   //update any time EEPROM struct below is changed.
-#define EEPROM_PAGE         0
+// BMS types
+enum BMS_t {
+    BMS_Dummy, 
+    BMS_Tesla, 
+    BMS_VW_MEB, 
+    BMS_VW_eGolf, 
+    BMS_BMW_I3, 
+    BMS_BMW_MiniE, 
+    BMS_Type_MAX
+};
 
-//BMS types
-enum BMS_t {BMS_Dummy, BMS_Tesla, BMS_VW_MEB, BMS_VW_eGolf, BMS_BMW_I3, BMS_BMW_MiniE, BMS_Type_MAX};
+// BMC status values
+enum {
+  Stat_Boot, 
+  Stat_Ready, 
+  Stat_Drive, 
+  Stat_Charge, 
+  Stat_Precharge, 
+  Stat_Error, 
+  Stat_Warning, 
+  Stat_Debug, 
+  Stat_Charged, 
+  Stat_Healthy
+};
 
-//BMC status values
-enum {Stat_Boot, Stat_Ready, Stat_Drive, Stat_Charge, Stat_Precharge, Stat_Error, Stat_Warning, Stat_Debug, Stat_Charged, Stat_Healthy};
+// Current sensor values
+enum {
+  Sen_Undefined, 
+  Sen_Analoguesing, 
+  Sen_Analoguedual, 
+  Sen_Canbus
+};
 
-//Current sensor values
-enum {Sen_Undefined, Sen_Analoguesing, Sen_Analoguedual, Sen_Canbus};
+// Charger Types
+enum {
+  Charger_No, 
+  Charger_BrusaNLG5, 
+  Charger_ChevyVolt, 
+  Charger_Eltek, 
+  Charger_Elcon, 
+  Charger_Victron, 
+  Charger_Coda
+};
 
-//Charger Types
-enum {Charger_No, Charger_BrusaNLG5, Charger_ChevyVolt, Charger_Eltek, Charger_Elcon, Charger_Victron, Charger_Coda};
-
-//Motor Controllers
+// Motor Controllers
 enum {MC_No, Curtis};
 
-//Menu options
-enum {Menu_Start, Menu_Main, Menu_Battery, Menu_CurSen, Menu_Charger, Menu_MC, Menu_Outputs, Menu_Alarms, Menu_IgnVal, Menu_CAN, Menu_Exp, Menu_Debug};
+// Menu options
+enum {
+    Menu_Start, 
+    Menu_Main, 
+    Menu_Battery, 
+    Menu_CurSen, 
+    Menu_Charger, 
+    Menu_MC, 
+    Menu_Outputs, 
+    Menu_Alarms, 
+    Menu_IgnVal, 
+    Menu_CAN, 
+    Menu_Exp, 
+    Menu_Debug
+};
 #define Menu_Quit 113
+
+// Warnings & Alarms
+enum {
+  WarnAlarm_Warning = 1,
+  WarnAlarm_Alarm = 2
+};
+
+enum {
+  WarnAlarm_Dummy, 
+  WarnAlarm_VLow, 
+  WarnAlarm_Vhigh, 
+  WarnAlarm_TLow, 
+  WarnAlarm_THigh, 
+  WarnAlarm_ChargeTLow, 
+  WarnAlarm_ChargeTHigh, 
+  WarnAlarm_CurHigh,
+  WarnAlarm_ChargeCurHigh,
+  WarnAlarm_External, 
+  WarnAlarm_CellGap,
+};
 
 /*
 CAN mapping
@@ -76,7 +138,17 @@ CAN_Charger   // Charger control
 CAN_Curr_Sen  // Current Sensor Bus
 CAN_MC        // Motor Controller
 */
-enum {CAN_BMC_std, CAN_BMC_HV, CAN_BMS, CAN_Charger, CAN_Curr_Sen, CAN_MC, CAN_MAP_MAX};
+enum {
+  CAN_BMC_std, 
+  CAN_BMC_HV, 
+  CAN_BMS, 
+  CAN_Charger, 
+  CAN_Curr_Sen, 
+  CAN_MC, CAN_MAP_MAX
+};
+
+#define EEPROM_VERSION      0x27   //update any time EEPROM struct below is changed.
+#define EEPROM_PAGE         0
 
 typedef struct {
   byte version;
@@ -84,21 +156,24 @@ typedef struct {
   uint16_t ReadTimeout;
   byte batteryID;  //which battery ID should this board associate as on the CAN bus
   BMS_t BMSType; // see BMS_Type above
-  uint16_t OverVSetpoint; // in mV
-  uint16_t UnderVSetpoint; // in mV
+  uint16_t OverVAlarm; // in mV
+  uint16_t OverVWarn; // in mV
+  uint16_t UnderVWarn; // in mV
+  uint16_t UnderVAlarm; // in mV
   uint16_t DischHys; // in mV
   uint16_t ChargeVSetpoint; // in mV
   uint16_t ChargeVsetpoint_toll; // in mV
-  uint16_t UnderVDerateSetpoint; // in mV
   uint16_t ChargeHys; // in mV
   uint16_t StoreVsetpoint; // in mV
-  uint16_t WarnVoltageOffset; // in mV
   
-  int16_t OverTSetpoint; // in 0,1°C
-  int16_t UnderTSetpoint; // in 0,1°C
-  int16_t UnderTDerateSetpoint; // in 0,1°C
-  int16_t OverTDerateSetpoint; // in 0,1°C
-  int16_t WarnTempOffset; // in 0,1°C
+  int16_t OverTAlarm; // in 0,1°C
+  int16_t OverTWarn; // in 0,1°C
+  int16_t UnderTWarn; // in 0,1°C
+  int16_t UnderTAlarm; // in 0,1°C
+  int16_t ChargeOverTAlarm; // in 0,1°C
+  int16_t ChargeOverTWarn; // in 0,1°C
+  int16_t ChargeUnderTWarn; // in 0,1°C  
+  int16_t ChargeUnderTAlarm; // in 0,1°C
 
   uint16_t CellGap; // in mV
   byte useTempSensor;
@@ -110,11 +185,15 @@ typedef struct {
   uint16_t CAP; // in Ah
   uint16_t designCAP; // in Ah
   uint32_t CAP_Wh;
+  
   uint16_t ChargerChargeCurrentMax; // in 0,1 A
-  uint16_t PackChargeCurrentMax; // in 0,1 A
-  uint16_t chargecurrent2max; // in 0,1 A
-  uint16_t chargecurrentend; // in 0,1 A
-  uint16_t PackDisCurrentMax ; // in 0,1 A
+  uint16_t ChargeOverCurrAlarm; // in 0,1 A
+  uint16_t ChargeOverCurrWarn; // in 0,1 A
+  uint16_t ChargeCurrent2Max; // in 0,1 A
+  uint16_t ChargeCurrentEnd; // in 0,1 A
+  uint16_t OverCurrAlarm ; // in 0,1 A
+  uint16_t OverCurrWarn ; // in 0,1 A
+
   int socvolt[4]; // in mV
   bool invertcur;
   int cursens;
@@ -134,7 +213,6 @@ typedef struct {
   int chargertype;
   byte nchargers;
   uint16_t CurDead;
-  uint16_t DisTaper;
   byte ChargerDirect;
   int mctype;
   byte SerialCan; // bool

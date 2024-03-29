@@ -1,10 +1,11 @@
 #include <Arduino.h> 
 #include <FlexCAN_T4.h>
+#include <config.h>
  
 void Reset_Cause(uint32_t resetStatusReg);
 void BMSInit();
 void mAmpsec_calc();
-void WarnAlarm_Check();
+bool WarnAlarm_Check(byte Type = 0, byte WarnAlarm = WarnAlarm_Dummy);
 byte Balancing(byte active = 1);
 void BMS_Poll();
 void BMC_Status_LED();
@@ -63,6 +64,6 @@ void OUT_Mapping_read();
 void set_OUTs();
 void set_OUT_States(byte Function = 254);
 uint32_t CAP_Temp_alteration();
-void OUT_Debug();
+void OUT_print();
 bool ChargeActive();
 uint32_t ConvertToBin(byte Input);

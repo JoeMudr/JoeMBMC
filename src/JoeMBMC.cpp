@@ -229,19 +229,22 @@ void loadSettings(){
   settings.ReadTimeout = 2000;
   settings.batteryID = 0x01; // in the future should be 0xFF to force it to ask for an address
   settings.BMSType = BMS_Dummy;
-  settings.OverVSetpoint = 4200;
+  settings.OverVAlarm = 4200;
+  settings.OverVWarn = 4100;
   settings.ChargeVSetpoint = 4150;
-  settings.UnderVSetpoint = 3000;
-  settings.UnderVDerateSetpoint = 3200;
+  settings.UnderVWarn = 3200;
+  settings.UnderVAlarm = 3000;
   settings.ChargeHys = 100; // mV drop required for charger to kick back on
-  settings.WarnVoltageOffset = 100; // mV offset to raise a warning
   settings.DischHys = 200; // Discharge voltage offset
   settings.CellGap = 500; // max delta between high and low cell
-  settings.OverTSetpoint = 550; // 0.1°C
-  settings.OverTDerateSetpoint = 450; // 0.1°C
-  settings.UnderTSetpoint = 0; // 0.1°C
-  settings.UnderTDerateSetpoint = 50; // 0.1°C
-  settings.WarnTempOffset = 50; // 0.1°C, temp offset before raising warning
+  settings.OverTAlarm = 550; // 0.1°C
+  settings.OverTWarn = 450; // 0.1°C
+  settings.UnderTWarn = 50; // 0.1°C
+  settings.UnderTAlarm = 0; // 0.1°C
+  settings.ChargeOverTAlarm = 550; // 0.1°C
+  settings.ChargeOverTWarn = 450; // 0.1°C
+  settings.ChargeUnderTWarn = 50; // 0.1°C
+  settings.ChargeUnderTAlarm = 0; // 0.1°C
   settings.useTempSensor = 0; // 0 - use both sensors, 1 or 2 only use that sensor
   settings.IgnoreVolt = 500; //
   settings.balanceVoltage = 3700;
@@ -253,12 +256,13 @@ void loadSettings(){
   settings.Pstrings = 1; // strings in parallel
   settings.Scells = 30;// Cells in series
   settings.StoreVsetpoint = 3800; // mV storage mode charge max
-  settings.PackDisCurrentMax = 5500; // max discharge current in 0.1A
-  settings.DisTaper = 300; //mV offset to bring in discharge taper to Zero Amps at settings.UnderVDerateSetpoint
+  settings.OverCurrAlarm = 5500; // max discharge current in 0.1A
+  settings.OverCurrWarn = 5000; // max discharge current in 0.1A
   settings.ChargerChargeCurrentMax = 320; //max charge current in 0.1A
-  settings.PackChargeCurrentMax = 1000; //Pack max charge current in 0.1A for Error handling
-  settings.chargecurrent2max = 150; //max charge current in 0.1A
-  settings.chargecurrentend = 50; //end charge current in 0.1A
+  settings.ChargeOverCurrAlarm = 1000; //Pack max charge current in 0.1A for Error handling
+  settings.ChargeOverCurrWarn = 950; //Pack max charge current in 0.1A for Error handling
+  settings.ChargeCurrent2Max = 150; //max charge current in 0.1A
+  settings.ChargeCurrentEnd = 50; //end charge current in 0.1A
   settings.socvolt[0] = 3100; //Voltage and SOC curve for voltage based SOC calc
   settings.socvolt[1] = 10; //Voltage and SOC curve for voltage based SOC calc
   settings.socvolt[2] = 4100; //Voltage and SOC curve for voltage based SOC calc
@@ -441,7 +445,7 @@ void loop(){
       // main debug output
       SERIALCONSOLEprint(); 
       // OUT functions and states
-      OUT_Debug();
+      OUT_print();
       // Display reason the Teensy was last reset
       Reset_Cause(lastResetCause);
     } //"debug" output on serial console
@@ -519,31 +523,108 @@ void BMSInit(){
   bms.initBMS(settings.BMSType,settings.IgnoreVolt,settings.useTempSensor,settings.ReadTimeout);
 }
 
-void WarnAlarm_Check(){
-  //warnings
-  for(byte i = 0; i<4; i++){warning[i] = 0b10101010;} // reset to all OK
+// Returns 1 if requested Warning or Alarm is raised. Type 0 = ignored, 1 = Warning, 2 = Error
+bool WarnAlarm_Check(byte Type, byte WarnAlarm){
 
-  if (bms.getHighCellVolt() > (settings.OverVSetpoint - settings.WarnVoltageOffset)){ warning[0] ^= 0b00001100;}
-  if (bms.getLowCellVolt() < (settings.UnderVSetpoint + settings.WarnVoltageOffset)){
+  // reset to all OK
+  for(byte i = 0; i<4; i++){
+    warning[i] = 0b10101010;
+    alarm[i] = 0b10101010;
+  } 
+
+  // Overvoltage
+  if (bms.getHighCellVolt() > settings.OverVWarn){warning[0] ^= 0b00001100;}  
+  if (bms.getHighCellVolt() > settings.OverVAlarm){alarm[0] ^= 0b00001100;}
+
+  // Undervoltage
+  if (bms.getLowCellVolt() < (settings.UnderVWarn)){
     warning[0] ^= 0b00110000;
     if (!warning_timer){warning_timer = millis() + 10000;}
     if (millis() > warning_timer){CAP_recalc();warning_timer = 0;} // recalculate capacity when lowest cell is under warning setpoint; reset Timer to prevent EEPROM Kill
-  } else {warning_timer = 0;}
+  } else {warning_timer = 0;}    
+  if (bms.getLowCellVolt() < settings.UnderVAlarm){alarm[0] ^= 0b00110000;}
 
-  if (bms.getHighTemperature() > (settings.OverTSetpoint - settings.WarnTempOffset)){warning[0] ^= 0b11000000;}
-  if (bms.getLowTemperature() < (settings.UnderTSetpoint + settings.WarnTempOffset)){warning[1] ^= 0b00000011;}
-  if ((bms.getHighCellVolt() - bms.getLowCellVolt()) > settings.CellGap){warning[3] ^= 0b00000011;}
+  // Over Temperature 
+  if (bms.getHighTemperature() > settings.OverTWarn){warning[0] ^= 0b11000000;}  
+  if (bms.getHighTemperature() > settings.OverTAlarm){alarm[0] ^= 0b11000000;}
+
+  // Under Temperature
+  if (bms.getLowTemperature() < settings.UnderTWarn){warning[1] ^= 0b00000011;}  
+  if (bms.getLowTemperature() < settings.UnderTAlarm){alarm[1] ^= 0b00000011;}
+
+  // Charge Over Temperature
+  if (bms.getHighTemperature() > settings.ChargeOverTWarn){warning[1] ^= 0b00001100;}
+  if (bms.getHighTemperature() > settings.ChargeOverTAlarm){alarm[1] ^= 0b00001100;}
+
+  // Charge Under Temperature
+  if (bms.getLowTemperature() < settings.ChargeUnderTWarn){warning[1] ^= 0b00110000;}
+  if (bms.getLowTemperature() < settings.ChargeUnderTAlarm){alarm[1] ^= 0b00110000;}
+
+  // Over Current
+  if (currentact / 100 * -1 > settings.OverCurrWarn){warning[1] ^= 0b11000000;}
+  if (currentact / 100 * -1 > settings.OverCurrAlarm){alarm[1] ^= 0b11000000;}
+
+  // Charge Over Current
+  if (currentact / 100 > settings.ChargeOverCurrWarn){warning[2] ^= 0b00000011;} 
+  if (currentact / 100 > settings.ChargeOverCurrAlarm){alarm[2] ^= 0b00000011;}
+
+  // External Alarm / Series Cells [ToDo] include BMB/CMU Alerts
   if (bms.getSeriesCells() != settings.Scells * settings.Pstrings){warning[2] ^= 0b11000000;}
- 
-  //Errors
-  for(byte i = 0; i<4; i++){alarm[i] = 0b10101010;} // reset to all OK
+//if (bms.getSeriesCells() != settings.Scells * settings.Pstrings){alarm[2] ^= 0b11000000;} // [ToDo] elaborate
 
-  if (bms.getHighCellVolt() > settings.OverVSetpoint){alarm[0] ^= 0b00001100;}
-  if (bms.getLowCellVolt() < settings.UnderVSetpoint){alarm[0] ^= 0b00110000;}
-  if (bms.getHighTemperature() > settings.OverTSetpoint){alarm[0] ^= 0b11000000;}
-  if (bms.getLowTemperature() < settings.UnderTSetpoint){alarm[1] ^= 0b00000011;}
-  if ((bms.getHighCellVolt() - bms.getLowCellVolt()) > settings.CellGap){alarm[3] ^= 0b00000011;} // [ToDO] bmsinit?
-  //if (bms.getSeriesCells() != settings.Scells * settings.Pstrings){alarm[2] ^= 0b11000000;}
+  // Cell Gap
+  if ((bms.getHighCellVolt() - bms.getLowCellVolt()) > settings.CellGap){warning[3] ^= 0b00000011;}
+//if ((bms.getHighCellVolt() - bms.getLowCellVolt()) > settings.CellGap){alarm[3] ^= 0b00000011;} // [ToDo] elaborate
+
+
+  switch (WarnAlarm){
+    case WarnAlarm_VLow:
+      if(Type == 1){return warning[0] & 0b00010000;}
+      if(Type == 2){return alarm[0] & 0b00010000;}
+    break;
+    case WarnAlarm_Vhigh:
+      if(Type == 1){return warning[0] & 0b00000100;}
+      if(Type == 2){return alarm[0] & 0b00000100;}
+    break;
+    case WarnAlarm_ChargeTLow:
+      if(Type == 1){return warning[1] & 0b00010000;}
+      if(Type == 2){return alarm[1] & 0b00010000;}
+    break;
+    case WarnAlarm_ChargeTHigh:
+      if(Type == 1){return warning[1] & 0b00000100;}
+      if(Type == 2){return alarm[1] & 0b00000100;}
+    break;
+    case WarnAlarm_TLow:
+      if(Type == 1){return warning[1] & 0b00000001;}
+      if(Type == 2){return alarm[1] & 0b0000001;}
+    break;
+    case WarnAlarm_THigh:
+      if(Type == 1){return warning[0] & 0b01000000;}
+      if(Type == 2){return alarm[0] & 0b01000000;}
+    break;
+    case WarnAlarm_CurHigh:
+      if(Type == 1){return warning[1] & 0b01000000;}
+      if(Type == 2){return alarm[1] & 0b0100000;}
+    break;
+    case WarnAlarm_ChargeCurHigh:
+      if(Type == 1){return warning[2] & 0b00000001;}
+      if(Type == 2){return alarm[2] & 0b00000001;}
+    break;
+    case WarnAlarm_External:
+      if(Type == 1){return warning[0] & 0b01000000;}
+      if(Type == 2){return alarm[0] & 0b01000000;}
+    break;
+    case WarnAlarm_CellGap:
+      if(Type == 1){return warning[3] & 0b00000001;}
+      if(Type == 2){return alarm[3] & 0b00000001;}
+    break;
+    
+    default: // return 1 if any Warning or Alarm is raised. No specific WarnAlarm passed (=0=Dummy).
+      if(Type == 1){if (warning[0] & 0b01010101 || warning[1] & 0b01010101 || warning[2] & 0b01010101 || warning[3] & 0b01010101) {return 1;}}
+      if(Type == 2){if (alarm[0] & 0b01010101 || alarm[1] & 0b01010101 || alarm[2] & 0b01010101 || alarm[3] & 0b01010101) {return 1;}} 
+    break;
+  }
+  return 0;
 }
 
 
@@ -552,18 +633,14 @@ byte Vehicle_CondCheck(byte tmp_status){
   // start with no Errors
   tmp_status = Stat_Ready;
 
-  // Reset to Ready if all Inputs are LOW ?
-  // if (digitalRead(IN1_Key) == LOW && digitalRead(IN2_Gen) == LOW && digitalRead(IN3_AC) == LOW && digitalRead(IN4) == LOW){tmp_status = Stat_Ready;}
-
   // detect KEY ON & AC OFF -> Drive
   if (digitalRead(IN1_Key) == HIGH && ChargeActive() == false){
-  //if (ChargeActive() == false){
     if (precharged) {tmp_status = Stat_Drive;}
     else {tmp_status = Stat_Precharge;}
   } 
 
   // detect Undervoltage before Charging / let Charging override this Error
-  if (alarm[0] & 0b00010000) {tmp_status = Stat_Error;}
+  if (WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_VLow)) {tmp_status = Stat_Error;}
 
   //detect AC present & Check charging conditions
   if (ChargeActive() == true){
@@ -583,12 +660,21 @@ byte Vehicle_CondCheck(byte tmp_status){
     if (bms.getHighCellVolt() > (settings.ChargeVSetpoint - settings.ChargeHys) && tmp_status != Stat_Charge){
       tmp_status = Stat_Charged;
     }    
+
+
+    if(WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_ChargeCurHigh) || 
+       WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_ChargeTHigh) || 
+       WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_ChargeTLow))
+       {tmp_status = Stat_Error;}
   }
 
   // Set Error depending on Error conditions, except Undervoltage to let Charging recover from Undervoltage
   // Undertemp is no Error in Drive & Charge (--> derate)
-  //[ToDO] Fix Tlow --> "Separate temperaturer thresholds for charge / discharge #18 "
-  if (alarm[0] & 0b01000101 || alarm[3] & 0b00000001){tmp_status = Stat_Error;}
+  if (WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_Vhigh) || 
+      WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_THigh) || 
+      WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_TLow) ||
+      WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_CurHigh))
+      {tmp_status = Stat_Error;}
 
 
   // reset Error-Timer
@@ -600,22 +686,25 @@ byte ESS_CondCheck(byte tmp_status){
   // Precharge first
   if (precharged){tmp_status = Stat_Healthy;}
   else {tmp_status = Stat_Precharge;}  
-  //tmp_status = Stat_Healthy;
+
   if (digitalRead(IN1_Key) == HIGH) { 
     //[ToDo] storagemode
   }
 
-  // detect Undervoltage before Charging / let Charging override this Error
-  if (alarm[0] & 0b00010000) {tmp_status = Stat_Error;}
-  
-  if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)){
-    SOC_charged();
-  }
+  if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)) {SOC_charged();}
 
-  // Set Error depending on Error conditions, except Undervoltage to let Charging recover from Undervoltage
-  if (alarm[0] & 0b01000101 || (alarm[1] & 0b00000001)  || alarm[2] & 0b01010100){tmp_status = Stat_Error;}
+  // Set Error depending on Error conditions
+  if (WarnAlarm_Check(WarnAlarm_Alarm, WarnAlarm_Vhigh) || 
+      WarnAlarm_Check(WarnAlarm_Alarm, WarnAlarm_VLow) || 
+      WarnAlarm_Check(WarnAlarm_Alarm, WarnAlarm_THigh) || 
+      WarnAlarm_Check(WarnAlarm_Alarm, WarnAlarm_TLow) || 
+      WarnAlarm_Check(WarnAlarm_Alarm, WarnAlarm_ChargeTHigh) || 
+      WarnAlarm_Check(WarnAlarm_Alarm, WarnAlarm_ChargeTLow) || 
+      WarnAlarm_Check(WarnAlarm_Alarm, WarnAlarm_ChargeCurHigh) || 
+      WarnAlarm_Check(WarnAlarm_Alarm, WarnAlarm_CellGap))
+      {tmp_status = Stat_Error;}
 
-  if (tmp_status != Stat_Error){error_timer = 0;}
+  if (tmp_status != Stat_Error) {error_timer = 0;}
   
   return tmp_status;
 }
@@ -631,13 +720,15 @@ bool ChargeActive(){
 }
 
 byte Warn_Out_handle(){
-  if (warning[0] & 0b01010101 || warning[1] & 0b01010101 || warning[2] & 0b01010101 || warning[3] & 0b01010101){
+  if(WarnAlarm_Check(WarnAlarm_Warning,0)){
     set_OUT_States(Out_Err_Warn);
     set_OUT_States(Out_Warning);
-    if(warning[0] & 0b01000000){ // high temp -> activate cooling
+    if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_THigh) || WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_ChargeTHigh)){
+    // high temp -> activate cooling
       set_OUT_States(Out_Cooling);
     }
-    if(warning[1] & 0b00000001){ // low temp -> activate heating
+    if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_TLow) || WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_TLow)){
+    // low temp -> activate heating
       set_OUT_States(Out_Heating);
     }
     return 1;
@@ -766,7 +857,8 @@ void SERIALCONSOLEprint(){
   if (Balancing()){ SERIALCONSOLE.printf(" | Balancing Active\r\n\n"); } else { SERIALCONSOLE.printf("\r\n\n"); }
 
   bms.printPackDetails();
-  if (warning[2] & 0b01000000){
+  if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_External)){
+  //if (warning[2] & 0b01000000){
     SERIALCONSOLE.printf("!!! Internal Error / Series Cells Fault !!!\r\n\n");
   } else { SERIALCONSOLE.printf("\r\n");}
   
@@ -1139,7 +1231,7 @@ void set_OUTs(){
   cont_timer = millis();
 }
 
-void OUT_Debug(){
+void OUT_print(){
   SERIALCONSOLE.printf("Function         State Timer\r\n");
   SERIALCONSOLE.printf("----------------------------\r\n");
   for(byte i = 1; i < 12; i++){ //[ToDo] us array size for loop
@@ -1307,72 +1399,90 @@ void Menu(){
     break;
     case Menu_Battery:
       switch (menu_option){
-        case 1: settings.OverVSetpoint = menu_option_val; Menu(); break;
-        case 2: settings.ChargeVSetpoint = menu_option_val; Menu(); break;
-        case 3: settings.UnderVDerateSetpoint = menu_option_val; Menu(); break;
-        case 4: settings.UnderVSetpoint = menu_option_val; Menu(); break;
-        case 5: settings.OverTSetpoint = menu_option_val * 10; Menu(); break;
-        case 6: settings.OverTDerateSetpoint = menu_option_val * 10; Menu(); break;
-        case 7: settings.UnderTDerateSetpoint = menu_option_val * 10; Menu(); break;    
-        case 8: settings.UnderTSetpoint = menu_option_val * 10; Menu(); break;    
-        case 9: settings.balanceVoltage = menu_option_val; Menu(); break;   
-        case 10: settings.balanceHyst = menu_option_val; Menu(); break;   
-        case 11: settings.designCAP = menu_option_val; Menu(); break;
-        case 12: settings.CAP = menu_option_val; Menu(); break;
-        case 13: settings.Pstrings = menu_option_val; Menu(); break;     
-        case 14: settings.Scells = menu_option_val; Menu(); break;  
-        case 15: settings.PackDisCurrentMax = menu_option_val * 10; Menu(); break;
-        case 16: settings.socvolt[0] = menu_option_val; Menu(); break;  
-        case 17: settings.socvolt[1] = menu_option_val; Menu(); break; 
-        case 18: settings.socvolt[2] = menu_option_val; Menu(); break;                                                               
-        case 19: settings.socvolt[3] = menu_option_val; Menu(); break;  
-        case 20: settings.StoreVsetpoint = menu_option_val; Menu(); break;  
-        case 21: settings.Temp_Cap_Map[0][0] = menu_option_val * 10; Menu(); break;
-        case 22: settings.Temp_Cap_Map[1][0] = menu_option_val; Menu(); break;
-        case 23: settings.Temp_Cap_Map[0][1] = menu_option_val * 10; Menu(); break;
-        case 24: settings.Temp_Cap_Map[1][1] = menu_option_val; Menu(); break;
-        case 25: settings.Temp_Cap_Map[0][2] = menu_option_val * 10; Menu(); break;
-        case 26: settings.Temp_Cap_Map[1][2] = menu_option_val; Menu(); break;
-        case 27: settings.Temp_Cap_Map[0][3] = menu_option_val * 10; Menu(); break;
-        case 28: settings.Temp_Cap_Map[1][3] = menu_option_val; Menu(); break;
-        case 29: settings.Temp_Cap_Map[0][4] = menu_option_val * 10; Menu(); break;
-        case 30: settings.Temp_Cap_Map[1][4] = menu_option_val; Menu(); break;
+        case 1: settings.OverVAlarm = menu_option_val; Menu(); break;
+        case 2: settings.UnderVWarn = menu_option_val; Menu(); break;
+        case 3: settings.UnderVWarn = menu_option_val; Menu(); break;
+        case 4: settings.UnderVAlarm = menu_option_val; Menu(); break;
+        case 5: settings.ChargeVSetpoint = menu_option_val; Menu(); break;
+        case 6: settings.OverTAlarm = menu_option_val * 10; Menu(); break;
+        case 7: settings.OverTWarn = menu_option_val * 10; Menu(); break;
+        case 8: settings.UnderTWarn = menu_option_val * 10; Menu(); break;    
+        case 9: settings.UnderTAlarm = menu_option_val * 10; Menu(); break;
+        case 10: settings.ChargeOverTAlarm = menu_option_val * 10; Menu(); break;
+        case 11: settings.ChargeOverTWarn = menu_option_val * 10; Menu(); break;
+        case 12: settings.ChargeUnderTWarn = menu_option_val * 10; Menu(); break;    
+        case 13: settings.ChargeUnderTAlarm = menu_option_val * 10; Menu(); break;            
+        case 14: settings.balanceVoltage = menu_option_val; Menu(); break;   
+        case 15: settings.balanceHyst = menu_option_val; Menu(); break; 
+        case 16: settings.CellGap = menu_option_val; Menu(); break;  
+        case 17: settings.designCAP = menu_option_val; Menu(); break;
+        case 18: settings.CAP = menu_option_val; Menu(); break;
+        case 19: settings.Pstrings = menu_option_val; Menu(); break;     
+        case 20: settings.Scells = menu_option_val; Menu(); break;  
+        case 21: settings.ChargeOverCurrAlarm = menu_option_val * 10; Menu(); break;
+        case 22: settings.ChargeOverCurrWarn = menu_option_val * 10; Menu(); break;
+        case 23: settings.OverCurrAlarm = menu_option_val * 10; Menu(); break;
+        case 24: settings.OverCurrWarn = menu_option_val * 10; Menu(); break;
+        case 25: settings.socvolt[0] = menu_option_val; Menu(); break;  
+        case 26: settings.socvolt[1] = menu_option_val; Menu(); break; 
+        case 27: settings.socvolt[2] = menu_option_val; Menu(); break;                                                               
+        case 28: settings.socvolt[3] = menu_option_val; Menu(); break;  
+        case 29: settings.StoreVsetpoint = menu_option_val; Menu(); break;  
+        case 30: settings.Temp_Cap_Map[0][0] = menu_option_val * 10; Menu(); break;
+        case 31: settings.Temp_Cap_Map[1][0] = menu_option_val; Menu(); break;
+        case 32: settings.Temp_Cap_Map[0][1] = menu_option_val * 10; Menu(); break;
+        case 33: settings.Temp_Cap_Map[1][1] = menu_option_val; Menu(); break;
+        case 34: settings.Temp_Cap_Map[0][2] = menu_option_val * 10; Menu(); break;
+        case 35: settings.Temp_Cap_Map[1][2] = menu_option_val; Menu(); break;
+        case 36: settings.Temp_Cap_Map[0][3] = menu_option_val * 10; Menu(); break;
+        case 37: settings.Temp_Cap_Map[1][3] = menu_option_val; Menu(); break;
+        case 38: settings.Temp_Cap_Map[0][4] = menu_option_val * 10; Menu(); break;
+        case 39: settings.Temp_Cap_Map[1][4] = menu_option_val; Menu(); break;
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
           SERIALCONSOLE.printf("Battery\r\n");
           SERIALCONSOLE.printf("--------------------\r\n\r\n");
           SERIALCONSOLE.printf("Cell limits:\r\n");    
-          SERIALCONSOLE.printf("[1] Cell Overvoltage (mV):           %4i\r\n",settings.OverVSetpoint);
-          SERIALCONSOLE.printf("[2] Charge Voltage Setpoint (mV):    %4i\r\n",settings.ChargeVSetpoint);
-          SERIALCONSOLE.printf("[3] Derate at Undervoltage (mV):     %4i\r\n",settings.UnderVDerateSetpoint);     
-          SERIALCONSOLE.printf("[4] Cell Undervoltage (mV):          %4i\r\n",settings.UnderVSetpoint);
-          SERIALCONSOLE.printf("[5] Over Temperature (°C):           %4i\r\n",settings.OverTSetpoint / 10);
-          SERIALCONSOLE.printf("[6] Derate at high Temperature (°C): %4i\r\n",settings.OverTDerateSetpoint / 10);
-          SERIALCONSOLE.printf("[7] Derate at low Temperature (°C):  %4i\r\n",settings.UnderTDerateSetpoint / 10);
-          SERIALCONSOLE.printf("[8] Under Temperature (°C):          %4i\r\n",settings.UnderTSetpoint / 10);
-          SERIALCONSOLE.printf("[9] Cell Balance Voltage (mV):       %4i\r\n",settings.balanceVoltage);
-          SERIALCONSOLE.printf("[10] Balance Hysteresis (mV):        %4i\r\n",settings.balanceHyst);
+          SERIALCONSOLE.printf("[1] Cell Overvoltage Alarm (mV):            %4i\r\n",settings.OverVAlarm);
+          SERIALCONSOLE.printf("[2] Cell Overvoltage Warning (mV):          %4i\r\n",settings.OverVWarn); //
+          SERIALCONSOLE.printf("[3] Cell Undervoltage Warning (mV):         %4i\r\n",settings.UnderVWarn);  //   
+          SERIALCONSOLE.printf("[4] Cell Undervoltage Alarm (mV):           %4i\r\n",settings.UnderVAlarm); //
+          SERIALCONSOLE.printf("[5] Charge Voltage Setpoint (mV):           %4i\r\n",settings.ChargeVSetpoint); //
+          SERIALCONSOLE.printf("[6] Over Temperature Alarm (°C):            %4i\r\n",settings.OverTAlarm / 10);
+          SERIALCONSOLE.printf("[7] Over Temperature Warning (°C):          %4i\r\n",settings.OverTWarn / 10);
+          SERIALCONSOLE.printf("[8] Under Temperature Warning (°C):         %4i\r\n",settings.UnderTWarn / 10);
+          SERIALCONSOLE.printf("[9] Under Temperature Alarm (°C):           %4i\r\n",settings.UnderTAlarm / 10);
+          SERIALCONSOLE.printf("[10] Charge Over Temperature Alarm (°C):    %4i\r\n",settings.ChargeOverTAlarm / 10);
+          SERIALCONSOLE.printf("[11] Charge Over Temperature Warning (°C):  %4i\r\n",settings.ChargeOverTWarn / 10);
+          SERIALCONSOLE.printf("[12] Charge Under Temperature Warning (°C): %4i\r\n",settings.ChargeUnderTWarn / 10);
+          SERIALCONSOLE.printf("[13] Charge Under Temperature Alarm (°C):   %4i\r\n",settings.ChargeUnderTAlarm / 10);
+          SERIALCONSOLE.printf("[14] Cell Balance Voltage (mV):             %4i\r\n",settings.balanceVoltage);
+          SERIALCONSOLE.printf("[15] Balance Hysteresis (mV):               %4i\r\n",settings.balanceHyst);
+          SERIALCONSOLE.printf("[16] Cell Delta Voltage Alarm (mV):         %4i\r\n",settings.CellGap);
           SERIALCONSOLE.printf("\r\n");
           SERIALCONSOLE.printf("Pack configuration:\r\n");         
-          SERIALCONSOLE.printf("[11] Pack Design Capacity (Ah):  %4i\r\n",settings.designCAP);
-          SERIALCONSOLE.printf("[12] Pack current Capacity (Ah): %4i\r\n",settings.CAP); 
-          SERIALCONSOLE.printf("[13] Cells in Parallel:          %4i\r\n",settings.Pstrings);
-          SERIALCONSOLE.printf("[14] Cells in Series:            %4i\r\n",settings.Scells );
-          SERIALCONSOLE.printf("[15] Pack Max Discharge (A):     %4i\r\n",settings.PackDisCurrentMax / 10);
+          SERIALCONSOLE.printf("[17] Design Capacity (Ah):          %4i\r\n",settings.designCAP);
+          SERIALCONSOLE.printf("[18] Current Capacity (Ah):         %4i\r\n",settings.CAP); 
+          SERIALCONSOLE.printf("[19] Cells in Parallel:             %4i\r\n",settings.Pstrings);
+          SERIALCONSOLE.printf("[20] Cells in Series:               %4i\r\n",settings.Scells );
+          SERIALCONSOLE.printf("[21] Charge Current Alarm (A):      %4i\r\n",settings.ChargeOverCurrAlarm / 10);
+          SERIALCONSOLE.printf("[22] Charge Current Warning (A):    %4i\r\n",settings.ChargeOverCurrWarn / 10);          
+          SERIALCONSOLE.printf("[23] Discharge Current Alarm (A):   %4i\r\n",settings.OverCurrAlarm / 10);
+          SERIALCONSOLE.printf("[24] Discharge Current Warning (A): %4i\r\n",settings.OverCurrWarn / 10);
           SERIALCONSOLE.printf("\r\n");
           SERIALCONSOLE.printf("Voltage based SOC:\r\n");
-          SERIALCONSOLE.printf("[16] Setpoint1 (mV):        %4i\r\n",settings.socvolt[0]);
-          SERIALCONSOLE.printf("[17] SOC @ Setpoint1 (%%):   %4i\r\n",settings.socvolt[1]);
-          SERIALCONSOLE.printf("[18] Setpoint2 (mV):        %4i\r\n",settings.socvolt[2]);
-          SERIALCONSOLE.printf("[19] SOC @ Setpoint2 (%%):   %4i\r\n",settings.socvolt[3]);
-          SERIALCONSOLE.printf("[20] Storage Setpoint (mV): %4i\r\n",settings.StoreVsetpoint);
+          SERIALCONSOLE.printf("[25] Setpoint1 (mV):        %4i\r\n",settings.socvolt[0]);
+          SERIALCONSOLE.printf("[26] SOC @ Setpoint1 (%%):   %4i\r\n",settings.socvolt[1]);
+          SERIALCONSOLE.printf("[27] Setpoint2 (mV):        %4i\r\n",settings.socvolt[2]);
+          SERIALCONSOLE.printf("[28] SOC @ Setpoint2 (%%):   %4i\r\n",settings.socvolt[3]);
+          SERIALCONSOLE.printf("[29] Storage Setpoint (mV): %4i\r\n",settings.StoreVsetpoint);
           SERIALCONSOLE.printf("\r\n");
           SERIALCONSOLE.printf("Temperature based SOC Adjustment:\r\n");
           for (byte i = 0; i < 5; i++){
             byte y = i*2;
-            SERIALCONSOLE.printf("[%i] T%i(°C): %3i\r\n",21+y,i+1,settings.Temp_Cap_Map[0][i]/10);
-            SERIALCONSOLE.printf("[%i] C%i (%%): %3i\r\n",22+y,i+1,settings.Temp_Cap_Map[1][i]);
+            SERIALCONSOLE.printf("[%i] T%i(°C): %3i\r\n",30+y,i+1,settings.Temp_Cap_Map[0][i]/10);
+            SERIALCONSOLE.printf("[%i] C%i (%%): %3i\r\n",31+y,i+1,settings.Temp_Cap_Map[1][i]);
           }
           SERIALCONSOLE.printf("\r\n");                    
           SERIALCONSOLE.printf("[q] Quit\r\n");          
@@ -1434,7 +1544,7 @@ void Menu(){
       switch (menu_option){
         case 1: settings.ChargeHys = menu_option_val; Menu(); break;
         case 2: settings.ChargerChargeCurrentMax = menu_option_val * 10; Menu(); break;
-        case 3: settings.chargecurrentend = menu_option_val * 10; Menu(); break;
+        case 3: settings.ChargeCurrentEnd = menu_option_val * 10; Menu(); break;
         case 4:
           settings.chargertype++;
           if (settings.chargertype > 6){ settings.chargertype = 0; }
@@ -1456,7 +1566,7 @@ void Menu(){
           SERIALCONSOLE.printf("[1] Charge Hysteresis (mV):                %4i\r\n",settings.ChargeHys);
           if (settings.chargertype > 0){
             SERIALCONSOLE.printf("[2] Max Charge Current per Charger (A):    %4i\r\n",settings.ChargerChargeCurrentMax / 10);
-            SERIALCONSOLE.printf("[3] Pack End of Charge Current in (A):     %4i\r\n",settings.chargecurrentend / 10);
+            SERIALCONSOLE.printf("[3] Pack End of Charge Current in (A):     %4i\r\n",settings.ChargeCurrentEnd / 10);
           }
           SERIALCONSOLE.printf("[4] Charger Type:                 ");
           switch (settings.chargertype){
@@ -1561,19 +1671,13 @@ void Menu(){
     break; 
     case Menu_Alarms:
       switch (menu_option){
-        case 1: settings.WarnVoltageOffset = menu_option_val; Menu(); break;
-        case 2: settings.CellGap = menu_option_val; Menu(); break;
-        case 3: settings.WarnTempOffset = menu_option_val * 10; Menu(); break;                        
-        case 4: settings.error_delay = menu_option_val; Menu(); break;             
+        case 1: settings.error_delay = menu_option_val; Menu(); break;             
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
           SERIALCONSOLE.printf("Alarms\r\n");
           SERIALCONSOLE.printf("--------------------\r\n");
-          SERIALCONSOLE.printf("[1] Voltage Warning Offset (mV):   %4i\r\n",settings.WarnVoltageOffset);
-          SERIALCONSOLE.printf("[2] Cell Delta Voltage Alarm (mV): %4i\r\n",settings.CellGap);
-          SERIALCONSOLE.printf("[3] Temp Warning offset (°C):      %4i\r\n",settings.WarnTempOffset / 10);
-          SERIALCONSOLE.printf("[4] Error Delay (ms):             %5i\r\n",settings.error_delay);
+          SERIALCONSOLE.printf("[1] Error Delay (ms):             %5i\r\n",settings.error_delay);
           SERIALCONSOLE.printf("\r\n");        
           SERIALCONSOLE.printf("[q] Quit\r\n");          
       }
@@ -1729,19 +1833,19 @@ int16_t pgnFromCANId(int16_t canId){ //Parameter Group Number
 void ChargeCurrentLimit(){
   ///Start at no derating///
   chargecurrent = settings.ChargerChargeCurrentMax;
-  u_int16_t EndCurrent = settings.chargecurrentend / settings.nchargers;
+  u_int16_t EndCurrent = settings.ChargeCurrentEnd / settings.nchargers;
   u_int16_t tmp_chargecurrent = 0;
 
-  if (bms.getHighCellVolt() > settings.OverVSetpoint){ chargecurrent = 0; }
+  if (bms.getHighCellVolt() > settings.OverVAlarm){ chargecurrent = 0; }
 
   //Modifying Charge current
   if (chargecurrent > 0){
     //Temperature based
-    if (bms.getLowTemperature() < settings.UnderTDerateSetpoint){
-      chargecurrent = map(bms.getLowTemperature()*10, settings.UnderTSetpoint*10, settings.UnderTDerateSetpoint*10, 0, settings.ChargerChargeCurrentMax);
+    if (bms.getLowTemperature() < settings.UnderTWarn){
+      chargecurrent = map(bms.getLowTemperature()*10, settings.UnderTAlarm*10, settings.UnderTWarn*10, 0, settings.ChargerChargeCurrentMax);
     }
-    if (bms.getHighTemperature() > settings.OverTDerateSetpoint){
-      chargecurrent = map(bms.getHighTemperature()*10, settings.OverTDerateSetpoint*10, settings.OverTSetpoint*10, settings.ChargerChargeCurrentMax, 0);
+    if (bms.getHighTemperature() > settings.OverTWarn){
+      chargecurrent = map(bms.getHighTemperature()*10, settings.OverTWarn*10, settings.OverTAlarm*10, settings.ChargerChargeCurrentMax, 0);
     }    
     //Voltage based
     if (storagemode){
@@ -1749,7 +1853,7 @@ void ChargeCurrentLimit(){
       if (bms.getHighCellVolt() > upperStoreVLimit){
         tmp_chargecurrent = map(bms.getHighCellVolt(), upperStoreVLimit, settings.StoreVsetpoint, settings.ChargerChargeCurrentMax, EndCurrent);
         if(tmp_chargecurrent < chargecurrent){
-          chargecurrent = constrain(tmp_chargecurrent,settings.chargecurrentend,settings.ChargerChargeCurrentMax);   
+          chargecurrent = constrain(tmp_chargecurrent,settings.ChargeCurrentEnd,settings.ChargerChargeCurrentMax);   
         }
       }
     } else { 
@@ -1757,14 +1861,14 @@ void ChargeCurrentLimit(){
       if (bms.getHighCellVolt() /*CellV*/ > upperVLimit){
         tmp_chargecurrent = map(bms.getHighCellVolt() /*CellV*/, upperVLimit, settings.ChargeVSetpoint, settings.ChargerChargeCurrentMax, EndCurrent);
         if(tmp_chargecurrent < chargecurrent){
-          chargecurrent = constrain(tmp_chargecurrent,settings.chargecurrentend,settings.ChargerChargeCurrentMax);
+          chargecurrent = constrain(tmp_chargecurrent,settings.ChargeCurrentEnd,settings.ChargerChargeCurrentMax);
         }
       }
     }
     //16A Limit
     tmp_chargecurrent = 3600 / (round(double(bms.getPackVoltage()) / 1000)) /*PackV*/ * 95 / 10; //3,6kW max, 95% Eff. , factor 10 [ToDo] make conf. + CAN
     if(tmp_chargecurrent < chargecurrent){
-      chargecurrent = constrain(tmp_chargecurrent,settings.chargecurrentend,settings.ChargerChargeCurrentMax);
+      chargecurrent = constrain(tmp_chargecurrent,settings.ChargeCurrentEnd,settings.ChargerChargeCurrentMax);
     }
   }   
 
@@ -1779,28 +1883,29 @@ void ChargeCurrentLimit(){
   //chargecurrentFactor = chargecurrent / (currentact / 100);
 
   chargecurrent = constrain(chargecurrent,0,settings.ChargerChargeCurrentMax); //[ToTest]
-  chargecurrent = constrain(chargecurrent,0,settings.PackChargeCurrentMax / settings.nchargers); //[ToTest]
+  chargecurrent = constrain(chargecurrent,0,settings.ChargeOverCurrAlarm / settings.nchargers); //[ToTest]
   chargecurrentlast = chargecurrent;
 }
 
 void DischargeCurrentLimit(){
   ///Start at no derating///
-  discurrent = settings.PackDisCurrentMax;
+  discurrent = settings.OverCurrAlarm;
   u_int16_t tmp_discurrent = 0;
 
   //Modifying discharge current//
   if (discurrent > 0){
     //Temperature based//
-    if (bms.getHighTemperature() > settings.OverTDerateSetpoint){
-      discurrent = map(bms.getHighTemperature(), settings.OverTDerateSetpoint, settings.OverTSetpoint, settings.PackDisCurrentMax, 0);
+    if (WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_THigh)){
+      discurrent = map(bms.getHighTemperature(), settings.OverTWarn, settings.OverTAlarm, settings.OverCurrAlarm, 0);
     }
     //Voltage based//
-    if (bms.getLowCellVolt() < (settings.UnderVDerateSetpoint + settings.DisTaper)){
-      tmp_discurrent = map(bms.getLowCellVolt(), (settings.UnderVDerateSetpoint + settings.DisTaper), settings.UnderVDerateSetpoint, settings.PackDisCurrentMax, 0);
+    //if (bms.getLowCellVolt() < (settings.UnderVWarn + settings.DisTaper)){
+    if (WarnAlarm_Check(WarnAlarm_Warning, WarnAlarm_VLow)){
+      tmp_discurrent = map(bms.getLowCellVolt(), settings.UnderVWarn, settings.UnderVAlarm, settings.OverCurrAlarm, 0);
       if(discurrent>tmp_discurrent){discurrent = tmp_discurrent;}//don't override temperature based modification
     }
   }
-  discurrent = constrain(discurrent,0,settings.PackDisCurrentMax);
+  discurrent = constrain(discurrent,0,settings.OverCurrAlarm);
 }
 
 
@@ -1854,7 +1959,7 @@ void Dash_update(){
 
   //voltage gauge
   int32_t dashvolt = 0;
-  dashvolt = round(map(bms.getPackVoltage(), settings.Scells * settings.UnderVSetpoint, settings.Scells * settings.OverVSetpoint, 5, 95));
+  dashvolt = round(map(bms.getPackVoltage(), settings.Scells * settings.UnderVAlarm, settings.Scells * settings.OverVAlarm, 5, 95));
   dashvolt = constrain(dashvolt, 0, 100);
 
   String eta = "";
@@ -1966,8 +2071,8 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   MSG.buf[3] = highByte(chargecurrent);
   MSG.buf[4] = lowByte(discurrent);
   MSG.buf[5] = highByte(discurrent);
-  MSG.buf[6] = lowByte(uint16_t(round(float(settings.UnderVDerateSetpoint)/100 * settings.Scells)));
-  MSG.buf[7] = highByte(uint16_t(round(float(settings.UnderVDerateSetpoint)/100 * settings.Scells)));
+  MSG.buf[6] = lowByte(uint16_t(round(float(settings.UnderVWarn)/100 * settings.Scells)));
+  MSG.buf[7] = highByte(uint16_t(round(float(settings.UnderVWarn)/100 * settings.Scells)));
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
 
@@ -2134,8 +2239,8 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
       MSG.buf[0] = lowByte(uint16_t(round(float(settings.ChargeVSetpoint) / 100 * settings.Scells)));
       MSG.buf[1] = highByte(uint16_t(round(float(settings.ChargeVSetpoint) / 100 * settings.Scells)));
     }
-    MSG.buf[2] = lowByte(uint16_t(round(float(settings.UnderVDerateSetpoint) / 100 * settings.Scells)));
-    MSG.buf[3] = highByte(uint16_t(round(float(settings.UnderVDerateSetpoint) / 100 * settings.Scells)));
+    MSG.buf[2] = lowByte(uint16_t(round(float(settings.UnderVWarn) / 100 * settings.Scells)));
+    MSG.buf[3] = highByte(uint16_t(round(float(settings.UnderVWarn) / 100 * settings.Scells)));
     MSG.buf[4] = lowByte(chargecurrent);
     MSG.buf[5] = highByte(chargecurrent);
     MSG.buf[6] = lowByte(discurrent);
@@ -2157,7 +2262,7 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     if(CAN_Nr & 2){can2.write(MSG);}
 
     delay(2);
-    MSG.id  = 0x4230 + BMC_Addr;
+    MSG.id  = 0x4240 + BMC_Addr;
     MSG.buf[0] = lowByte(uint16_t(bms.getHighTemperature() + 100));
     MSG.buf[1] = highByte(uint16_t(bms.getHighTemperature() + 100));
     MSG.buf[2] = lowByte(uint16_t(bms.getLowTemperature() + 100));
@@ -2196,13 +2301,13 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
 
     MSG.id  = 0x4250 + BMC_Addr;
     MSG.buf[0] = 0b00000011; // bit0-2: 0 = sleep, 1 = Charge, 2 = Discharge, 3 = Idle; Bit3: Force Charge; Bit4: Force Balance Charge; Bit5-7: Reserved; [ToDo]
-    MSG.buf[1] = 0; // Cycle Period?
-    MSG.buf[2] = 0; // Cycle Period?
-    MSG.buf[3] = 0; // Error
+    MSG.buf[1] = 0; // Cycle Period? [ToDo]
+    MSG.buf[2] = 0; // Cycle Period? [ToDo]
+    MSG.buf[3] = 0; // Error / Faults [ToDo] not implemented yet
     MSG.buf[4] = lowByte(tmpAlarm); // Alarm
     MSG.buf[5] = highByte(tmpAlarm); // Alarm
-    MSG.buf[6] = 0; // Protection same as Alarm?
-    MSG.buf[7] = 0; // Protection same as Alarm?
+    MSG.buf[6] = 0; // Protection same as Alarm? [ToDo]
+    MSG.buf[7] = 0; // Protection same as Alarm? [ToDo]
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
 
