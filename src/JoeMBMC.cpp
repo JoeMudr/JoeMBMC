@@ -29,7 +29,7 @@
 #include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
 
 /////Version Identifier/////////
-uint32_t firmver = 240327;
+uint32_t firmver = 240329;
 
 //Tesla_BMSModuleManager bms;
 BMSManager bms;
