@@ -289,16 +289,16 @@ void loadDefaultSettings(){
   settings.mctype = 0; 
   settings.secondarySerial = 0; 
   settings.error_delay = 10000; 
-  settings.Temp_Cap_Map[0][0] = -200;
-  settings.Temp_Cap_Map[0][1] = -100;
-  settings.Temp_Cap_Map[0][2] = 0;
-  settings.Temp_Cap_Map[0][3] = 250;
-  settings.Temp_Cap_Map[0][4] = 400;
-  settings.Temp_Cap_Map[1][0] = 38;
-  settings.Temp_Cap_Map[1][1] = 69;
-  settings.Temp_Cap_Map[1][2] = 78;
-  settings.Temp_Cap_Map[1][3] = 90;
-  settings.Temp_Cap_Map[1][4] = 100;
+  settings.Temp_CAP_Map[0][0] = -200;
+  settings.Temp_CAP_Map[0][1] = -100;
+  settings.Temp_CAP_Map[0][2] = 0;
+  settings.Temp_CAP_Map[0][3] = 250;
+  settings.Temp_CAP_Map[0][4] = 400;
+  settings.Temp_CAP_Map[1][0] = 38;
+  settings.Temp_CAP_Map[1][1] = 69;
+  settings.Temp_CAP_Map[1][2] = 78;
+  settings.Temp_CAP_Map[1][3] = 90;
+  settings.Temp_CAP_Map[1][4] = 100;
   for (size_t i = 0; i < 9; i++){
     settings.Out_Map[0][i] = 0;
     settings.Out_Map[1][i] = 0;
@@ -1138,25 +1138,25 @@ void SOC_charged(){
   Returns temperature corrected capacity in Ah.
   Uses:
     bms.getLowTemperature()
-    settings.Temp_Cap_Map[x][x]
+    settings.Temp_CAP_Map[x][x]
 */
 uint32_t CAP_Temp_alteration(){
   byte factor_map = 0;
 
   //temp below lowest Setpoint
-  if (bms.getLowTemperature() < settings.Temp_Cap_Map[0][0]){ 
-    return settings.CAP * (settings.Temp_Cap_Map[1][0] / 100);
+  if (bms.getLowTemperature() < settings.Temp_CAP_Map[0][0]){ 
+    return settings.CAP * (settings.Temp_CAP_Map[1][0] / 100);
   }
 
   //temp above highest setpoint.
-  if(bms.getLowTemperature() >= settings.Temp_Cap_Map[0][4]) {
-    return settings.CAP * (settings.Temp_Cap_Map[1][4] / 100);
+  if(bms.getLowTemperature() >= settings.Temp_CAP_Map[0][4]) {
+    return settings.CAP * (settings.Temp_CAP_Map[1][4] / 100);
   }
   
   //everything in between
   for (byte i = 1; i < 4; i++){
-    if (bms.getLowTemperature() >= settings.Temp_Cap_Map[0][i] && bms.getLowTemperature() < settings.Temp_Cap_Map[0][i+1]){
-      factor_map = map(bms.getLowTemperature(), settings.Temp_Cap_Map[0][i], settings.Temp_Cap_Map[0][i+1],settings.Temp_Cap_Map[1][i],settings.Temp_Cap_Map[1][i+1]);
+    if (bms.getLowTemperature() >= settings.Temp_CAP_Map[0][i] && bms.getLowTemperature() < settings.Temp_CAP_Map[0][i+1]){
+      factor_map = map(bms.getLowTemperature(), settings.Temp_CAP_Map[0][i], settings.Temp_CAP_Map[0][i+1],settings.Temp_CAP_Map[1][i],settings.Temp_CAP_Map[1][i+1]);
       return round(settings.CAP * float(factor_map) / 100);
     }  
   }
@@ -1454,16 +1454,16 @@ void Menu(){
         case 27: settings.socvolt[2] = menu_option_val; Menu(); break;                                                               
         case 28: settings.socvolt[3] = menu_option_val; Menu(); break;  
         case 29: settings.StoreVsetpoint = menu_option_val; Menu(); break;  
-        case 30: settings.Temp_Cap_Map[0][0] = menu_option_val * 10; Menu(); break;
-        case 31: settings.Temp_Cap_Map[1][0] = menu_option_val; Menu(); break;
-        case 32: settings.Temp_Cap_Map[0][1] = menu_option_val * 10; Menu(); break;
-        case 33: settings.Temp_Cap_Map[1][1] = menu_option_val; Menu(); break;
-        case 34: settings.Temp_Cap_Map[0][2] = menu_option_val * 10; Menu(); break;
-        case 35: settings.Temp_Cap_Map[1][2] = menu_option_val; Menu(); break;
-        case 36: settings.Temp_Cap_Map[0][3] = menu_option_val * 10; Menu(); break;
-        case 37: settings.Temp_Cap_Map[1][3] = menu_option_val; Menu(); break;
-        case 38: settings.Temp_Cap_Map[0][4] = menu_option_val * 10; Menu(); break;
-        case 39: settings.Temp_Cap_Map[1][4] = menu_option_val; Menu(); break;
+        case 30: settings.Temp_CAP_Map[0][0] = menu_option_val * 10; Menu(); break;
+        case 31: settings.Temp_CAP_Map[1][0] = menu_option_val; Menu(); break;
+        case 32: settings.Temp_CAP_Map[0][1] = menu_option_val * 10; Menu(); break;
+        case 33: settings.Temp_CAP_Map[1][1] = menu_option_val; Menu(); break;
+        case 34: settings.Temp_CAP_Map[0][2] = menu_option_val * 10; Menu(); break;
+        case 35: settings.Temp_CAP_Map[1][2] = menu_option_val; Menu(); break;
+        case 36: settings.Temp_CAP_Map[0][3] = menu_option_val * 10; Menu(); break;
+        case 37: settings.Temp_CAP_Map[1][3] = menu_option_val; Menu(); break;
+        case 38: settings.Temp_CAP_Map[0][4] = menu_option_val * 10; Menu(); break;
+        case 39: settings.Temp_CAP_Map[1][4] = menu_option_val; Menu(); break;
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
@@ -1507,8 +1507,8 @@ void Menu(){
           SERIALCONSOLE.printf("Temperature based SOC Adjustment:\r\n");
           for (byte i = 0; i < 5; i++){
             byte y = i*2;
-            SERIALCONSOLE.printf("[%i] T%i(°C): %3i\r\n",30+y,i+1,settings.Temp_Cap_Map[0][i]/10);
-            SERIALCONSOLE.printf("[%i] C%i (%%): %3i\r\n",31+y,i+1,settings.Temp_Cap_Map[1][i]);
+            SERIALCONSOLE.printf("[%i] T%i(°C): %3i\r\n",30+y,i+1,settings.Temp_CAP_Map[0][i]/10);
+            SERIALCONSOLE.printf("[%i] C%i (%%): %3i\r\n",31+y,i+1,settings.Temp_CAP_Map[1][i]);
           }
           SERIALCONSOLE.printf("\r\n");                    
           SERIALCONSOLE.printf("[q] Quit\r\n");          

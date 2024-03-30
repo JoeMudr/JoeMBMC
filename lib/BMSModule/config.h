@@ -155,73 +155,73 @@ typedef struct {
   byte version;
   byte checksum;
   uint16_t ReadTimeout;
-  byte batteryID;  //which battery ID should this board associate as on the CAN bus
-  BMS_t BMSType; // see BMS_Type above
+  byte batteryID;       //which battery ID should this board associate as on the CAN bus
+  BMS_t BMSType;        // see BMS_Type above
 
-  uint16_t OverVAlarm; // in mV
-  uint16_t OverVWarn; // in mV
-  uint16_t UnderVWarn; // in mV
-  uint16_t UnderVAlarm; // in mV
-  uint16_t DischHys; // mV Discharge voltage offset [ToDo] not used
-  uint16_t ChargeVSetpoint; // in mV
+  uint16_t OverVAlarm;           // in mV
+  uint16_t OverVWarn;            // in mV
+  uint16_t UnderVWarn;           // in mV
+  uint16_t UnderVAlarm;          // in mV
+  uint16_t DischHys;             // mV Discharge voltage offset [ToDo] not used
+  uint16_t ChargeVSetpoint;      // in mV
   uint16_t ChargeVsetpoint_toll; // in mV
-  uint16_t ChargeHys; // mV drop required for charger to kick back on
-  uint16_t StoreVsetpoint; // mV storage mode charge max
-  uint16_t CellGap; // mV max delta between high and low cell
+  uint16_t ChargeHys;            // mV drop required for charger to kick back on
+  uint16_t StoreVsetpoint;       // mV storage mode charge max
+  uint16_t CellGap;              // mV max delta between high and low cell
 
-  int16_t OverTAlarm; // in 0,1°C
-  int16_t OverTWarn; // in 0,1°C
-  int16_t UnderTWarn; // in 0,1°C
-  int16_t UnderTAlarm; // in 0,1°C
-  int16_t ChargeOverTAlarm; // in 0,1°C
-  int16_t ChargeOverTWarn; // in 0,1°C
-  int16_t ChargeUnderTWarn; // in 0,1°C  
+  int16_t OverTAlarm;        // in 0,1°C
+  int16_t OverTWarn;         // in 0,1°C
+  int16_t UnderTWarn;        // in 0,1°C
+  int16_t UnderTAlarm;       // in 0,1°C
+  int16_t ChargeOverTAlarm;  // in 0,1°C
+  int16_t ChargeOverTWarn;   // in 0,1°C
+  int16_t ChargeUnderTWarn;  // in 0,1°C  
   int16_t ChargeUnderTAlarm; // in 0,1°C
 
-  byte useTempSensor; // 0 - use both sensors, 1 or 2 only use that sensor
-  uint16_t IgnoreVolt; // mV Cells under this Voltage will be ignored
+  byte useTempSensor;      // 0 - use both sensors, 1 or 2 only use that sensor
+  uint16_t IgnoreVolt;     // mV Cells under this Voltage will be ignored
   uint16_t balanceVoltage; // in mV
-  uint16_t balanceHyst; // in mV
-  uint16_t Scells; // Cells in series
-  uint16_t Pstrings; // strings in parallel
-  uint16_t CAP; // Ah Battery Capacity
-  uint16_t designCAP; // Ah Battery Design Capacity
+  uint16_t balanceHyst;    // in mV
+  uint16_t Scells;         // Cells in series
+  uint16_t Pstrings;       // strings in parallel
+  uint16_t CAP;            // Ah Battery Capacity
+  uint16_t designCAP;      // Ah Battery Design Capacity
   uint32_t CAP_Wh;
   
   uint16_t ChargeOverCurrAlarm; // in 0,1 A max charge current
-  uint16_t ChargeOverCurrWarn; // in 0,1 A max charge current
-  uint16_t ChargeCurrentEnd; // in 0,1 A end charge current
-  uint16_t OverCurrAlarm; // in 0,1 A max discharge current
-  uint16_t OverCurrWarn; // in 0,1 A max discharge current
+  uint16_t ChargeOverCurrWarn;  // in 0,1 A max charge current
+  uint16_t ChargeCurrentEnd;    // in 0,1 A end charge current
+  uint16_t OverCurrAlarm;       // in 0,1 A max discharge current
+  uint16_t OverCurrWarn;        // in 0,1 A max discharge current
 
   uint16_t ChargerChargeCurrentMax; // in 0,1 A max Charger charge current
-  int ChargerType; // 0 - No Charger, 1 - Brusa NLG5xx, 2 - Volt charger ...
-  byte nChargers; // number of chargers
-  byte ChargerDirect; // charger with or without contactors to HV
+  int ChargerType;                  // 0 - No Charger, 1 - Brusa NLG5xx, 2 - Volt charger ...
+  byte nChargers;                   // number of chargers
+  byte ChargerDirect;               // charger with or without contactors to HV
  
-  bool voltsoc; // SOC purely voltage based
+  bool voltsoc;   // SOC purely voltage based
   int socvolt[4]; // in mV Voltage and SOC curve for voltage based SOC calc
 
-  int CurSenType; // Sensor Type
-  int CurSenMultiplier; // number of multiples to use for current measurement
-  bool CurSenInvert; // Invert current sensor direction
-  uint16_t analogueSen1_convlow; // mV/A current sensor low range channel (*100)
+  int CurSenType;                 // Sensor Type
+  int CurSenMultiplier;           // number of multiples to use for current measurement
+  bool CurSenInvert;              // Invert current sensor direction
+  uint16_t analogueSen1_convlow;  // mV/A current sensor low range channel (*100)
   uint16_t analogueSen2_convhigh; // mV/A current sensor high range channel (*100)
-  uint16_t analogueSen1_offset; // mV mid point of channel 1
-  uint16_t analogueSen2_offset; // mV mid point of channel 2
-  int32_t analogueSen_ChangeCur; // in mA change over point
-  uint16_t analogueSen_CurDead; // mV of dead band on current sensor
+  uint16_t analogueSen1_offset;   // mV mid point of channel 1
+  uint16_t analogueSen2_offset;   // mV mid point of channel 2
+  int32_t analogueSen_ChangeCur;  // in mA change over point
+  uint16_t analogueSen_CurDead;   // mV of dead band on current sensor
 
   int balanceDuty;
   bool ESSmode; //activate ESS mode
-  int mctype; // type of Motor Controller
+  int mctype;   // type of Motor Controller
   byte secondarySerial; // Serial canbus or display: 0-display 1-canbus expansion 2-Bluetooth App
   unsigned long error_delay; //time before Error_Stat shuts everything off
-  int16_t Temp_Cap_Map[2][5] = {}; // [0][x] Temperature in 0,1°C; [1][x] Percentage of Capacity
+  int16_t Temp_CAP_Map[2][5] = {}; // [0][x] Temperature in 0,1°C; [1][x] Percentage of Capacity
   byte Out_Map[2][9] = {}; // OUT1 = Out_Map[x][1]...; [0][x] Functions; [1][x] PWM
-  int PreTime; // ms of precharge time
+  int PreTime;    // ms of precharge time
   int PreCurrent; // mA before closing main contator
-  byte GaugeLow; // empty fuel gauge pwm
+  byte GaugeLow;  // empty fuel gauge pwm
   byte GaugeHigh; // full fuel gauge pwm
 
   uint32_t CAN1_Speed;
