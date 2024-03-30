@@ -223,7 +223,7 @@ byte TCU_REL4 = 0;
 
 IntervalTimer Timer_mAmpSec;
 
-void loadSettings(){
+void loadDefaultSettings(){
   settings.version = EEPROM_VERSION;
   settings.checksum = 2;
   settings.ReadTimeout = 2000;
@@ -344,7 +344,7 @@ void setup(){
   analogWriteFrequency(OUT8, pwmfreq);
 
   EEPROM.get(0, settings);
-  if (settings.version != EEPROM_VERSION){ loadSettings(); }
+  if (settings.version != EEPROM_VERSION){ loadDefaultSettings(); }
   
   can1_start();
   can2_start();
@@ -596,7 +596,7 @@ bool WarnAlarm_Check(byte Type, byte WarnAlarm){
     break;
     case WarnAlarm_TLow:
       if(Type == 1){return warning[1] & 0b00000001;}
-      if(Type == 2){return alarm[1] & 0b0000001;}
+      if(Type == 2){return alarm[1] & 0b00000001;}
     break;
     case WarnAlarm_THigh:
       if(Type == 1){return warning[0] & 0b01000000;}
@@ -604,15 +604,15 @@ bool WarnAlarm_Check(byte Type, byte WarnAlarm){
     break;
     case WarnAlarm_CurHigh:
       if(Type == 1){return warning[1] & 0b01000000;}
-      if(Type == 2){return alarm[1] & 0b0100000;}
+      if(Type == 2){return alarm[1] & 0b01000000;}
     break;
     case WarnAlarm_ChargeCurHigh:
       if(Type == 1){return warning[2] & 0b00000001;}
       if(Type == 2){return alarm[2] & 0b00000001;}
     break;
     case WarnAlarm_External:
-      if(Type == 1){return warning[0] & 0b01000000;}
-      if(Type == 2){return alarm[0] & 0b01000000;}
+      if(Type == 1){return warning[2] & 0b01000000;}
+      if(Type == 2){return alarm[2] & 0b01000000;}
     break;
     case WarnAlarm_CellGap:
       if(Type == 1){return warning[3] & 0b00000001;}
@@ -631,19 +631,20 @@ bool WarnAlarm_Check(byte Type, byte WarnAlarm){
 
 byte Vehicle_CondCheck(byte tmp_status){ 
   // start with no Errors
-  tmp_status = Stat_Ready;
-
-  // detect KEY ON & AC OFF -> Drive
-  if (digitalRead(IN1_Key) == HIGH && ChargeActive() == false){
-    if (precharged) {tmp_status = Stat_Drive;}
-    else {tmp_status = Stat_Precharge;}
-  } 
+  if(!ChargeActive()){
+    tmp_status = Stat_Ready;
+    // detect KEY ON
+    if (digitalRead(IN1_Key)){
+      if (precharged) {tmp_status = Stat_Drive;}
+      else {tmp_status = Stat_Precharge;}
+    } 
+  }
 
   // detect Undervoltage before Charging / let Charging override this Error
   if (WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_VLow)) {tmp_status = Stat_Error;}
 
   //detect AC present & Check charging conditions
-  if (ChargeActive() == true){
+  if (ChargeActive()){
     //start charging when Voltage is below Charge Voltage - ChargeHyst.
     if (bms.getHighCellVolt() < (settings.ChargeVSetpoint - settings.ChargeHys)){ 
       if (precharged || settings.ChargerDirect){tmp_status = Stat_Charge;}
@@ -670,6 +671,7 @@ byte Vehicle_CondCheck(byte tmp_status){
 
   // Set Error depending on Error conditions, except Undervoltage to let Charging recover from Undervoltage
   // Undertemp is no Error in Drive & Charge (--> derate)
+  
   if (WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_Vhigh) || 
       WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_THigh) || 
       WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_TLow) ||
@@ -684,12 +686,15 @@ byte Vehicle_CondCheck(byte tmp_status){
 
 byte ESS_CondCheck(byte tmp_status){
   // Precharge first
-  if (precharged){tmp_status = Stat_Healthy;}
+  if (precharged){tmp_status = Stat_Idle;}
   else {tmp_status = Stat_Precharge;}  
 
-  if (digitalRead(IN1_Key) == HIGH) { 
-    //[ToDo] storagemode
-  }
+//[ToDo] storagemode?
+/*
+  if (digitalRead(IN1_Key) == HIGH) {}
+*/
+  if(currentact > 0){tmp_status = Stat_Charge;}
+  if(currentact < 0){tmp_status = Stat_Discharge;}
 
   if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)) {SOC_charged();}
 
@@ -797,13 +802,24 @@ void set_BMC_Status(byte status){
         chargecurrent = 0;
       }
     break;
-    case Stat_Healthy:
+    case Stat_Idle:
       set_OUT_States(); // all off
       set_OUT_States(Out_Discharge);
       set_OUT_States(Out_Cont_Pos);
       set_OUT_States(Out_Cont_Neg);
       set_OUT_States(Out_Gauge);
       Balancing();
+      DischargeCurrentLimit();
+      ChargeCurrentLimit();
+      Warn_Out_handle();
+      CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
+    break;
+    case Stat_Discharge:
+      set_OUT_States(); // all off
+      set_OUT_States(Out_Discharge);
+      set_OUT_States(Out_Cont_Pos);
+      set_OUT_States(Out_Cont_Neg);
+      set_OUT_States(Out_Gauge);
       DischargeCurrentLimit();
       ChargeCurrentLimit();
       Warn_Out_handle();
@@ -846,11 +862,11 @@ void SERIALCONSOLEprint(){
     case (Stat_Charge): SERIALCONSOLE.printf("Charge"); break;
     case (Stat_Charged): SERIALCONSOLE.printf("Charged"); break;
     case (Stat_Error): SERIALCONSOLE.printf("Error"); break;
-    case (Stat_Healthy): SERIALCONSOLE.printf("Healthy"); break;
+    case (Stat_Idle): SERIALCONSOLE.printf("Idle"); break;
   }
   if (Warn_Out_handle()){SERIALCONSOLE.printf(" (Warning!)\r\n");} else {SERIALCONSOLE.printf("\r\n");}
 
-  SERIALCONSOLE.printf("\r\nCharge Current Limit: %5.2f (%5.2f) A | DisCharge Current Limit: %5.2fA \r\n",float(chargecurrent) * settings.nchargers / 10, float(chargecurrent) / 10, float(discurrent) / 10);
+  SERIALCONSOLE.printf("\r\nCharge Current Limit: %5.2f (%5.2f) A | Discharge Current Limit: %5.2fA \r\n",float(chargecurrent) * settings.nchargers / 10, float(chargecurrent) / 10, float(discurrent) / 10);
   SERIALCONSOLE.printf("Vpack: %5.2fV | Vlow: %4umV | Vhigh: %4umV | DeltaV: %4umV | Tlow: %3.1f°C | Thigh: %3.1f°C\r\n",double(bms.getPackVoltage()) / 1000,bms.getLowCellVolt(),bms.getHighCellVolt(),bms.getHighCellVolt() - bms.getLowCellVolt(),float(bms.getLowTemperature()) / 10,float(bms.getHighTemperature()) / 10);
   SERIALCONSOLE.printf("Cells: %u/%u",bms.getSeriesCells(),settings.Scells * settings.Pstrings);
 
@@ -858,7 +874,6 @@ void SERIALCONSOLEprint(){
 
   bms.printPackDetails();
   if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_External)){
-  //if (warning[2] & 0b01000000){
     SERIALCONSOLE.printf("!!! Internal Error / Series Cells Fault !!!\r\n\n");
   } else { SERIALCONSOLE.printf("\r\n");}
   
@@ -874,8 +889,9 @@ void SERIALCONSOLEprint(){
     {SERIALCONSOLE.printf("CANbus: ");}
   SERIALCONSOLE.printf("%6imA\r\n",currentact);
   SERIALCONSOLE.printf("SOC:       %3u%%  (%.2fmAh)\r\n",SOC,double(mampsecond) / 3600);
-  SERIALCONSOLE.printf("SOH:       %3u%%  (%u/%uAh)\r\n",SOH_calc(),settings.designCAP,settings.CAP);
+  SERIALCONSOLE.printf("SOH:       %3u%%  (%u/%uAh)\r\n",SOH_calc(),settings.CAP,settings.designCAP);
   SERIALCONSOLE.printf("TCap:      %3uAh (%uWh)\r\n",abs(TCAP),abs(TCAP_Wh));
+  SERIALCONSOLE.printf("ETA:       %2ih %2im\r\n",ETA() / 60,ETA() % 60);
   SERIALCONSOLE.printf("Warning:   ");
   for (byte i = 0; i < 4; i++){
     SERIALCONSOLE.printf("%08i ",ConvertToBin(warning[i])); // [ToDo] in Binary
@@ -886,7 +902,6 @@ void SERIALCONSOLEprint(){
     SERIALCONSOLE.printf("%08i ",ConvertToBin(alarm[i])); // [ToDo] in Binary
   }
   SERIALCONSOLE.printf("\r\n");
-  SERIALCONSOLE.printf("ETA:       %2ih %2im\r\n",ETA() / 60,ETA() % 60);
   SERIALCONSOLE.printf("\r\n");
 
   SERIALCONSOLE.printf("IN %d%d%d%d %s %s\r\n",digitalRead(IN1_Key),digitalRead(IN2_Gen),digitalRead(IN3_AC),digitalRead(IN4),ChargeActive()?"| Charger plugged":"",digitalRead(IN1_Key)?"| Key ON":"");
@@ -896,7 +911,7 @@ void SERIALCONSOLEprint(){
   SERIALCONSOLE.printf("\r\n");
 }
 
-uint32_t ConvertToBin(byte Input){
+uint32_t ConvertToBin(uint32_t Input){
   byte exponent = 0;
   uint32_t base = 10;
   uint32_t retVal = 0;
@@ -1349,7 +1364,7 @@ void Menu(){
       SERIALCONSOLE.printf("[6]  Alarms\r\n");
       SERIALCONSOLE.printf("[7]  Ignore Values\r\n");
       SERIALCONSOLE.printf("[8]  CAN-Bus\r\n");
-      SERIALCONSOLE.printf("[9]  Experiental\r\n");
+      SERIALCONSOLE.printf("[9]  Misc.\r\n");
       SERIALCONSOLE.printf("[10] Debug\r\n");
       SERIALCONSOLE.printf("[11] Reboot\r\n");
       SERIALCONSOLE.printf("[12] Load Defaults\r\n");
@@ -1377,10 +1392,10 @@ void Menu(){
         case 6: menu_current = Menu_Alarms; Menu(); break;  
         case 7: menu_current = Menu_IgnVal; Menu(); break;
         case 8: menu_current = Menu_CAN; Menu(); break;  
-        case 9: menu_current = Menu_Exp; Menu(); break;   
+        case 9: menu_current = Menu_Misc; Menu(); break;   
         case 10: menu_current = Menu_Debug; Menu(); break; 
         case 11: SCB_AIRCR = 0x05FA0004; break;
-        case 12: loadSettings(); Menu(); SERIALCONSOLE.printf("::::::Defaults loaded::::::\r\n"); break;    
+        case 12: loadDefaultSettings(); Menu(); SERIALCONSOLE.printf("::::::Defaults loaded::::::\r\n"); break;    
         case 13: settings.ESSmode = !settings.ESSmode; menu_current = Menu_Start; Menu(); break;       
         case 14: 
           if(settings.BMSType == BMS_Type_MAX){settings.BMSType = BMS_Dummy;} 
@@ -1765,16 +1780,16 @@ void Menu(){
           SERIALCONSOLE.printf("[q] Quit\r\n");
       }
     break;     
-    case Menu_Exp:
+    case Menu_Misc:
       switch (menu_option){
         //case 1: settings.ExpMess = !settings.ExpMess; Menu(); break;
-        case 2: settings.SerialCan++; if(settings.SerialCan > 2){settings.SerialCan = 0;} Menu(); break;
+        case 1: settings.SerialCan++; if(settings.SerialCan > 2){settings.SerialCan = 0;} Menu(); break;
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
           SERIALCONSOLE.printf("Experimental\r\n");
           SERIALCONSOLE.printf("--------------------\r\n");
-          SERIALCONSOLE.printf("[2] Second Serial Port: ");
+          SERIALCONSOLE.printf("[1] Second Serial Port: ");
           switch (settings.SerialCan){
             case 0: SERIALCONSOLE.printf("%20s\r\n","Serial Display"); break;
             case 1: SERIALCONSOLE.printf("%20s\r\n","Can Bus Expansion"); break;
@@ -1977,7 +1992,8 @@ void Dash_update(){
       case (Stat_Charge): Nextion_send("stat.txt=", "\" Charge \""); break;
       case (Stat_Charged): Nextion_send("stat.txt=", "\" Charged \""); break;
       case (Stat_Error): Nextion_send("stat.txt=", "\" Error \""); break;
-      case (Stat_Healthy): Nextion_send("stat.txt=", "\" Healthy \""); break;
+      case (Stat_Idle): Nextion_send("stat.txt=", "\" Idle \""); break;
+      case (Stat_Discharge): Nextion_send("stat.txt=", "\" Discharge \""); break;
   }
   
   Nextion_send("soc.val=", SOC);
@@ -1996,7 +2012,7 @@ void Dash_update(){
   Nextion_send("firm.val=", firmver);
   Nextion_send("celldelta.val=", bms.getHighCellVolt() - bms.getLowCellVolt());
   Nextion_send("cellbal.val=", bms.getBalancing());
-  Nextion_send("debug.val=", abs(TCAP_Wh));
+  Nextion_send("debug.val=", ConvertToBin(warning[0]));
   Nextion_send("eta.txt=", eta);
   Nextion_send("etad.txt=", eta);
   Nextion_send("click ", "refresh,1"); //use Refresh-Button to Update Values on the Display
@@ -2118,6 +2134,11 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   MSG.buf[7] = warning[3];
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
+
+  /*
+  0x35C request Flag
+  Byte 0: Bit7 - Charge Enable, Bit6 - Discharge Enable, Bit5 - Request force Charge, Bit4 - Request force Charge 2, Bit3 - Request full Charge
+  */
 
   delay(2);
   MSG.id  = 0x35E;

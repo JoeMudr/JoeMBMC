@@ -67,7 +67,8 @@ enum {
   Stat_Warning, 
   Stat_Debug, 
   Stat_Charged, 
-  Stat_Healthy
+  Stat_Idle,
+  Stat_Discharge
 };
 
 // Current sensor values
@@ -104,7 +105,7 @@ enum {
     Menu_Alarms, 
     Menu_IgnVal, 
     Menu_CAN, 
-    Menu_Exp, 
+    Menu_Misc, 
     Menu_Debug
 };
 #define Menu_Quit 113
@@ -191,8 +192,8 @@ typedef struct {
   uint16_t ChargeOverCurrWarn; // in 0,1 A
   uint16_t ChargeCurrent2Max; // in 0,1 A
   uint16_t ChargeCurrentEnd; // in 0,1 A
-  uint16_t OverCurrAlarm ; // in 0,1 A
-  uint16_t OverCurrWarn ; // in 0,1 A
+  uint16_t OverCurrAlarm; // in 0,1 A
+  uint16_t OverCurrWarn; // in 0,1 A
 
   int socvolt[4]; // in mV
   bool invertcur;
