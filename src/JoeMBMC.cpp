@@ -29,9 +29,8 @@
 #include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
 
 /////Version Identifier/////////
-uint32_t firmver = 240330;
+uint32_t firmver = 300330;
 
-//Tesla_BMSModuleManager bms;
 BMSManager bms;
 EEPROMSettings settings;
 
@@ -96,9 +95,9 @@ uint32_t warning_timer = 0;
 unsigned char bmcname[8] = {'J', 'O', 'E', 'M', ' ', 'B', 'M', 'C'};
 unsigned char bmcmanu[8] = {'J', 'O', 'E', 'M', ' ', 'T', 'E', 'C'};
 
-int32_t ISAVoltage1, ISAVoltage2, ISAVoltage3 = 0; //mV only with ISAscale sensor
+//int32_t ISAVoltage1, ISAVoltage2, ISAVoltage3 = 0; //mV only with ISAscale sensor
 
-uint32_t BMSLastRead = 0;
+uint32_t BMSLastRead = 0; // [ToDo] not used
 
 //variables for current/capacity calulation
 uint16_t Sen_AnalogueRawValue;
@@ -128,11 +127,12 @@ uint16_t chargerendbulk = 0; //mV before Charge Voltage to turn off the bulk cha
 uint16_t chargerend = 0; //mV before Charge Voltage to turn off the finishing charger/s
 
 //variables
-byte output_debug_counter = 0;
 byte storagemode = 0;
 byte precharged = 0;
 byte Out_Print_ON = 1;
 byte Modules_Print_ON = 1;
+
+byte output_debug_counter = 0;
 
 //Output Control
 byte cont_pulltime = 255;
@@ -995,8 +995,8 @@ void CAN_SEN_read(CAN_message_t MSG, int32_t& CANmilliamps){
     case 0x3c9: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-009
     //IsaScale
     case 0x521: CANmilliamps = MSG.buf[5] + (MSG.buf[4] << 8) + (MSG.buf[3] << 16) + (MSG.buf[2] << 24); break;
-    case 0x522: ISAVoltage1 = MSG.buf[5] + (MSG.buf[4] << 8) + (MSG.buf[3] << 16) + (MSG.buf[2] << 24); break;
-    case 0x523: ISAVoltage2 = MSG.buf[5] + (MSG.buf[4] << 8) + (MSG.buf[3] << 16) + (MSG.buf[2] << 24); break;    
+    //case 0x522: ISAVoltage1 = MSG.buf[5] + (MSG.buf[4] << 8) + (MSG.buf[3] << 16) + (MSG.buf[2] << 24); break;
+    //case 0x523: ISAVoltage2 = MSG.buf[5] + (MSG.buf[4] << 8) + (MSG.buf[3] << 16) + (MSG.buf[2] << 24); break;    
     default: newVal = false; break;
   }
 
