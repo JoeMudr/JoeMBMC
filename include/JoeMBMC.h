@@ -21,7 +21,7 @@ void CAN_TCU_read(CAN_message_t MSG);
 void CAN_BMC_Std_send(byte CAN_Nr);
 void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t MSG);
 void CAN_Charger_Send(byte CAN_Nr);
-void CAN_Debug_IN(byte CanNr, CAN_message_t MSG);
+void CAN_Debug_IN(byte Can_Nr, CAN_message_t MSG);
 void CAN_Debug_OUT();
 void CAN_SEN_read(CAN_message_t MSG, int32_t& CurrentAct);
 signed long CAN_SEN_LEMCAB(CAN_message_t MSG);

@@ -29,7 +29,7 @@
 #include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
 
 /////Version Identifier/////////
-uint32_t firmver = 300330;
+uint32_t firmver = 010430;
 
 BMSManager bms;
 EEPROMSettings settings;
@@ -76,7 +76,7 @@ uint16_t pwmfreq = 18000;//pwm frequency
 
 uint16_t chargecurrent = 0; // in 0,1A
 uint16_t chargecurrentlast = 0; // in 0,1A
-//float chargecurrentFactor = 0.0f; //correction factor, when using multiple chargers
+uint16_t chargecurrentFactor = 0; //in%, correction factor, when using multiple chargers
 uint16_t discurrent = 0;
 
 /*
@@ -732,7 +732,7 @@ bool ChargeActive(){
 }
 
 byte Warn_Out_handle(){
-  if(WarnAlarm_Check(WarnAlarm_Warning,0)){
+  if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_Dummy)){
     set_OUT_States(Out_Err_Warn);
     set_OUT_States(Out_Warning);
     if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_THigh) || WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_ChargeTHigh)){
@@ -750,7 +750,7 @@ byte Warn_Out_handle(){
 
 void set_BMC_Status(byte status){
   switch (status){
-    case Stat_Boot:  //[ToDO] unnötig? Ändern in Wartungsmodus?
+    case Stat_Boot:  //[ToDO] change to maintenance mode?
       set_OUT_States(); // all off
       Balancing(0);
     break;
@@ -873,7 +873,7 @@ void SERIALCONSOLEprint(bool Modules_Print_ON){
   }
   if (Warn_Out_handle()){SERIALCONSOLE.printf(" (Warning!)\r\n");} else {SERIALCONSOLE.printf("\r\n");}
 
-  SERIALCONSOLE.printf("\r\nCharge Current Limit: %5.2f (%5.2f) A | Discharge Current Limit: %5.2fA \r\n",float(chargecurrent) * settings.nChargers / 10, float(chargecurrent) / 10, float(discurrent) / 10);
+  SERIALCONSOLE.printf("\r\nCharge Current Limit: %5.2fA (%5.2fA), Factor: %3u% | Discharge Current Limit: %5.2fA \r\n",float(chargecurrent) * settings.nChargers / 10, float(chargecurrent) / 10, chargecurrentFactor, float(discurrent) / 10);
   SERIALCONSOLE.printf("Vpack: %5.2fV | Vlow: %4umV | Vhigh: %4umV | DeltaV: %4umV | Tlow: %3.1f°C | Thigh: %3.1f°C\r\n",double(bms.getPackVoltage()) / 1000,bms.getLowCellVolt(),bms.getHighCellVolt(),bms.getHighCellVolt() - bms.getLowCellVolt(),float(bms.getLowTemperature()) / 10,float(bms.getHighTemperature()) / 10);
   SERIALCONSOLE.printf("Cells: %u/%u",bms.getSeriesCells(),settings.Scells * settings.Pstrings);
 
@@ -1859,54 +1859,52 @@ int16_t pgnFromCANId(int16_t canId){ //Parameter Group Number
 void ChargeCurrentLimit(){
   ///Start at no derating///
   chargecurrent = settings.ChargerChargeCurrentMax;
-  u_int16_t EndCurrent = settings.ChargeCurrentEnd / settings.nChargers;
-  u_int16_t tmp_chargecurrent = 0;
+  uint16_t EndCurrent = settings.ChargeCurrentEnd / settings.nChargers;
+  uint16_t tmp_chargecurrent = 0;
 
-  if (bms.getHighCellVolt() > settings.OverVAlarm){ chargecurrent = 0; }
+  if (WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_Vhigh)){ chargecurrent = 0; }
 
   //Modifying Charge current
   if (chargecurrent > 0){
     //Temperature based
-    if (bms.getLowTemperature() < settings.UnderTWarn){
-      chargecurrent = map(bms.getLowTemperature()*10, settings.UnderTAlarm*10, settings.UnderTWarn*10, 0, settings.ChargerChargeCurrentMax);
+    if (WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_ChargeTLow)){
+    //if (bms.getLowTemperature() < settings.UnderTWarn){
+      tmp_chargecurrent = map(bms.getLowTemperature()*10, settings.UnderTAlarm*10, settings.UnderTWarn*10, 0, settings.ChargerChargeCurrentMax);
+      chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
     }
-    if (bms.getHighTemperature() > settings.OverTWarn){
-      chargecurrent = map(bms.getHighTemperature()*10, settings.OverTWarn*10, settings.OverTAlarm*10, settings.ChargerChargeCurrentMax, 0);
+    if (WarnAlarm_Check(WarnAlarm_Warning, WarnAlarm_ChargeTHigh)){
+    //if (bms.getHighTemperature() > settings.OverTWarn){
+      tmp_chargecurrent = map(bms.getHighTemperature()*10, settings.OverTWarn*10, settings.OverTAlarm*10, settings.ChargerChargeCurrentMax, 0);
+      chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
     }    
     //Voltage based
     if (storagemode){
       uint16_t upperStoreVLimit = settings.StoreVsetpoint - settings.ChargeHys/2;
       if (bms.getHighCellVolt() > upperStoreVLimit){
         tmp_chargecurrent = map(bms.getHighCellVolt(), upperStoreVLimit, settings.StoreVsetpoint, settings.ChargerChargeCurrentMax, EndCurrent);
-        if(tmp_chargecurrent < chargecurrent){
-          chargecurrent = constrain(tmp_chargecurrent,settings.ChargeCurrentEnd,settings.ChargerChargeCurrentMax);   
-        }
+        chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
       }
     } else { 
-      uint16_t upperVLimit = settings.ChargeVSetpoint - settings.ChargeHys/2;
-      if (bms.getHighCellVolt() /*CellV*/ > upperVLimit){
-        tmp_chargecurrent = map(bms.getHighCellVolt() /*CellV*/, upperVLimit, settings.ChargeVSetpoint, settings.ChargerChargeCurrentMax, EndCurrent);
-        if(tmp_chargecurrent < chargecurrent){
-          chargecurrent = constrain(tmp_chargecurrent,settings.ChargeCurrentEnd,settings.ChargerChargeCurrentMax);
-        }
-      }
+      uint16_t upperVLimit = settings.ChargeVSetpoint - settings.ChargeHys/2; //[ToDo] make derate setpoint configurable?
+      if (bms.getHighCellVolt() > upperVLimit){
+        tmp_chargecurrent = map(bms.getHighCellVolt(), upperVLimit, settings.ChargeVSetpoint, settings.ChargerChargeCurrentMax, EndCurrent);
+        chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
+       }
     }
-    //16A Limit
-    tmp_chargecurrent = 3600 / (round(double(bms.getPackVoltage()) / 1000)) /*PackV*/ * 95 / 10; //3,6kW max, 95% Eff. , factor 10 [ToDo] make conf. + CAN
-    if(tmp_chargecurrent < chargecurrent){
-      chargecurrent = constrain(tmp_chargecurrent,settings.ChargeCurrentEnd,settings.ChargerChargeCurrentMax);
-    }
+    // 16A Limit
+    tmp_chargecurrent = 3600 / (round(double(bms.getPackVoltage()) / 1000)) * 95 / 10; //3,6kW max, 95% Eff. , factor 10 [ToDo] make conf. + CAN
+    chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
   }   
 
-  //compensate for consumers if Chargecurrent is 0 [ToTest]
-  //[ToDO] besser glätten, schwankt sehr stark
+  // compensate for consumers if Chargecurrent is 0 [ToTest]
+  // [ToDO] smoothing with P/I/D Controller?
   if(chargecurrent == 0 && currentact < 0){
     chargecurrent = chargecurrentlast + (currentact / 100 / settings.nChargers) * -1;
   }
 
-  //[ToDo] implement feedback loop
-  //multiply with calculated current
-  //chargecurrentFactor = chargecurrent / (currentact / 100);
+  // [ToDo] implement feedback loop
+  // multiply with calculated current
+  chargecurrentFactor = currentact / chargecurrent;
 
   chargecurrent = constrain(chargecurrent,0,settings.ChargerChargeCurrentMax); //[ToTest]
   chargecurrent = constrain(chargecurrent,0,settings.ChargeOverCurrAlarm / settings.nChargers); //[ToTest]
@@ -1922,13 +1920,14 @@ void DischargeCurrentLimit(){
   if (discurrent > 0){
     //Temperature based//
     if (WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_THigh)){
-      discurrent = map(bms.getHighTemperature(), settings.OverTWarn, settings.OverTAlarm, settings.OverCurrAlarm, 0);
+      tmp_discurrent = map(bms.getHighTemperature(), settings.OverTWarn, settings.OverTAlarm, settings.OverCurrAlarm, 0);
+      discurrent = tmp_discurrent < discurrent ? tmp_discurrent : discurrent;
     }
     //Voltage based//
     //if (bms.getLowCellVolt() < (settings.UnderVWarn + settings.DisTaper)){
     if (WarnAlarm_Check(WarnAlarm_Warning, WarnAlarm_VLow)){
       tmp_discurrent = map(bms.getLowCellVolt(), settings.UnderVWarn, settings.UnderVAlarm, settings.OverCurrAlarm, 0);
-      if(discurrent>tmp_discurrent){discurrent = tmp_discurrent;}//don't override temperature based modification
+      discurrent = tmp_discurrent < discurrent ? tmp_discurrent : discurrent;
     }
   }
   discurrent = constrain(discurrent,0,settings.OverCurrAlarm);
