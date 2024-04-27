@@ -29,7 +29,7 @@
 #include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
 
 /////Version Identifier/////////
-uint32_t firmver = 010430;
+uint32_t firmver = 240427;
 
 BMSManager bms;
 EEPROMSettings settings;
@@ -1426,7 +1426,7 @@ void Menu(){
     case Menu_Battery:
       switch (menu_option){
         case 1: settings.OverVAlarm = menu_option_val; Menu(); break;
-        case 2: settings.UnderVWarn = menu_option_val; Menu(); break;
+        case 2: settings.OverVWarn = menu_option_val; Menu(); break;
         case 3: settings.UnderVWarn = menu_option_val; Menu(); break;
         case 4: settings.UnderVAlarm = menu_option_val; Menu(); break;
         case 5: settings.ChargeVSetpoint = menu_option_val; Menu(); break;
@@ -2254,8 +2254,8 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.buf[1] = highByte(uint16_t(round(double(bms.getPackVoltage()) / 100)));
     MSG.buf[2] = lowByte(int32_t(round(double(currentact) / 100))); // [ToDo] values > ~6500A will overflow!
     MSG.buf[3] = highByte(int32_t(round(double(currentact) / 100)));
-    MSG.buf[4] = lowByte(int16_t(bms.getAvgTemperature() * 10));
-    MSG.buf[5] = highByte(int16_t(bms.getAvgTemperature() * 10));
+    MSG.buf[4] = lowByte(int16_t(bms.getAvgTemperature() + 1000));
+    MSG.buf[5] = highByte(int16_t(bms.getAvgTemperature() + 1000));
     MSG.buf[6] = SOC;
     MSG.buf[7] = SOH_calc();
     if(CAN_Nr & 1){can1.write(MSG);}
@@ -2294,10 +2294,10 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
 
     delay(2);
     MSG.id  = 0x4240 + BMC_Addr;
-    MSG.buf[0] = lowByte(uint16_t(bms.getHighTemperature() + 100));
-    MSG.buf[1] = highByte(uint16_t(bms.getHighTemperature() + 100));
-    MSG.buf[2] = lowByte(uint16_t(bms.getLowTemperature() + 100));
-    MSG.buf[3] = highByte(uint16_t(bms.getLowTemperature() + 100));
+    MSG.buf[0] = lowByte(uint16_t(bms.getHighTemperature() + 1000));
+    MSG.buf[1] = highByte(uint16_t(bms.getHighTemperature() + 1000));
+    MSG.buf[2] = lowByte(uint16_t(bms.getLowTemperature() + 1000));
+    MSG.buf[3] = highByte(uint16_t(bms.getLowTemperature() + 1000));
     MSG.buf[4] = 0; // MAX Single Battery Cell Temperature Number [ToDo]
     MSG.buf[5] = 0; // MAX Single Battery Cell Temperature Number [ToDo]
     MSG.buf[6] = 0; // MIN Single Battery Cell Temperature Number [ToDo]
