@@ -29,7 +29,7 @@
 #include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
 
 /////Version Identifier/////////
-uint32_t firmver = 240427;
+uint32_t firmver = 240428;
 
 BMSManager bms;
 EEPROMSettings settings;
@@ -74,10 +74,10 @@ byte Settings_unsaved= 0;
 uint32_t Pretimer;
 uint16_t pwmfreq = 18000;//pwm frequency
 
-uint16_t chargecurrent = 0; // in 0,1A
-uint16_t chargecurrentlast = 0; // in 0,1A
+uint16_t chargecurrent = 0;       // in 0,1A
+uint16_t chargecurrentlast = 0;   // in 0,1A
 uint16_t chargecurrentFactor = 0; //in%, correction factor, when using multiple chargers
-uint16_t discurrent = 0;
+uint16_t discurrent = 0;          // in 0,1A
 
 /*
 // SMA/Victron style Alarms & Warnings
@@ -533,6 +533,8 @@ void BMSInit(){
 // Returns 1 if requested Warning or Alarm is raised. Type 0 = ignored, 1 = Warning, 2 = Error
 bool WarnAlarm_Check(byte Type, byte WarnAlarm){
 
+  byte hyst = 5; // 0.5°C hysteresis [ToDO] make config.
+
   // reset to all OK
   for(byte i = 0; i<4; i++){
     warning[i] = 0b10101010;
@@ -794,7 +796,7 @@ void set_BMC_Status(byte status){
       Balancing();
       chargecurrentlast = 0;
       Warn_Out_handle();
-      CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
+      //CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
     case Stat_Error:
       if (!error_timer){ error_timer = millis() + settings.error_delay; }//10s delay before turning everything off
@@ -898,7 +900,8 @@ void SERIALCONSOLEprint(bool Modules_Print_ON){
   SERIALCONSOLE.printf("SOC:       %3u%%  (%.2fmAh)\r\n",SOC,double(mampsecond) / 3600);
   SERIALCONSOLE.printf("SOH:       %3u%%  (%u/%uAh)\r\n",SOH_calc(),settings.CAP,settings.designCAP);
   SERIALCONSOLE.printf("TCap:      %3uAh (%uWh)\r\n",abs(TCAP),abs(TCAP_Wh));
-  SERIALCONSOLE.printf("ETA:       %2ih %2im\r\n",ETA() / 60,ETA() % 60);
+  int32_t minutes = ETA();
+  SERIALCONSOLE.printf("ETA:       %2ih %2im\r\n",minutes / 60,minutes % 60);
   SERIALCONSOLE.printf("Warning:   ");
   for (byte i = 0; i < 4; i++){
     SERIALCONSOLE.printf("%08i ",ConvertToBin(warning[i])); // [ToDo] in Binary
@@ -1005,8 +1008,6 @@ void CAN_SEN_read(CAN_message_t MSG, int32_t& CANmilliamps){
   {CANmilliamps = CAN_SEN_VictronLynx(MSG);}
   else {newVal = false;}
 
-  //SERIALCONSOLE.println(CANmilliamps);
-
   if (settings.CurSenInvert && newVal){ CANmilliamps *= -1; }
   //return CANmilliamps;
 }
@@ -1064,7 +1065,7 @@ void Currentavg_Calc(){
   currentavg_array[currentavg_counter] = currentact;
   currentavg_counter++;
   if(currentavg_counter > 59){currentavg_counter = 0;}
-  uint32_t current_temp = 0;
+  int32_t current_temp = 0;
   uint16_t max_size = sizeof(currentavg_array)/sizeof(currentavg_array[0]);
   for (byte i=0; i< max_size; i++){
     current_temp += currentavg_array[i];
@@ -1093,13 +1094,13 @@ void Current_debug(){
 }
 
 
-int16_t ETA(){ // return minutes
+int32_t ETA(){ // return minutes
   //[ToDo] weiter glätten! mögl. vordef./errechneten Durchschnittswert einbeziehen?
   if(BMC_Stat == Stat_Charge){
-    return labs(mampsecond / 1000 / 60 / labs(currentavg/1000));
+    return labs(mampsecond / 60 / currentavg);
   }else{
-    if (currentavg >= 0){ return 0;}
-    else { return abs((TCAP * 60 - mampsecond / 1000 / 60) / labs(currentavg/1000)); }
+    if (currentavg >= 0){return 0;}
+    else { return abs((TCAP * 1000 * 60 - mampsecond / 60) / currentavg); }
   }
 }
 
@@ -1126,7 +1127,6 @@ void SOC_update(){
         SOC = constrain(SOC_tmp, 0, 100);// keep SOC bettween 0 and 100
     }
   }
-  //SERIALCONSOLE.println(mampsecond);
 }
 
 void SOC_charged(){
@@ -1988,8 +1988,9 @@ void Dash_update(){
   dashvolt = constrain(dashvolt, 0, 100);
 
   String eta = "";
+  int32_t minutes = ETA();
   if (BMC_Stat == Stat_Drive || BMC_Stat == Stat_Charge){
-    eta = "\"" + String(ETA() / 60) + "h " + String(ETA() % 60) + "m" + "\"";
+    eta = "\"" + String(minutes / 60) + "h " + String(minutes % 60) + "m" + "\"";
   } else {
     eta = "\"-\"";
   }
@@ -2252,8 +2253,8 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.id  = 0x4210 + BMC_Addr;
     MSG.buf[0] = lowByte(uint16_t(round(double(bms.getPackVoltage()) / 100)));
     MSG.buf[1] = highByte(uint16_t(round(double(bms.getPackVoltage()) / 100)));
-    MSG.buf[2] = lowByte(int32_t(round(double(currentact) / 100))); // [ToDo] values > ~6500A will overflow!
-    MSG.buf[3] = highByte(int32_t(round(double(currentact) / 100)));
+    MSG.buf[2] = lowByte(int32_t(round(double(currentact) / 100) + 30000)); // [ToDo] values > ~6500A will overflow!
+    MSG.buf[3] = highByte(int32_t(round(double(currentact) / 100) + 30000));
     MSG.buf[4] = lowByte(int16_t(bms.getAvgTemperature() + 1000));
     MSG.buf[5] = highByte(int16_t(bms.getAvgTemperature() + 1000));
     MSG.buf[6] = SOC;
@@ -2272,10 +2273,10 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     }
     MSG.buf[2] = lowByte(uint16_t(round(float(settings.UnderVWarn) / 100 * settings.Scells)));
     MSG.buf[3] = highByte(uint16_t(round(float(settings.UnderVWarn) / 100 * settings.Scells)));
-    MSG.buf[4] = lowByte(chargecurrent);
-    MSG.buf[5] = highByte(chargecurrent);
-    MSG.buf[6] = lowByte(discurrent);
-    MSG.buf[7] = highByte(discurrent);
+    MSG.buf[4] = lowByte(chargecurrent + 30000);
+    MSG.buf[5] = highByte(chargecurrent + 30000);
+    MSG.buf[6] = lowByte(discurrent + 30000);
+    MSG.buf[7] = highByte(discurrent + 30000);
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
 

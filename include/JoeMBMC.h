@@ -48,7 +48,7 @@ byte Gauge_update();
 void Dash_update();
 void BT_update();
 void Prechargecon();
-int16_t ETA();
+int32_t ETA();
 uint32_t SEN_AnalogueRead(int32_t tmp_currrentlast);
 void Serial_clear();
 uint16_t SOH_calc();
