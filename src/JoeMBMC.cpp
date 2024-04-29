@@ -29,7 +29,7 @@
 #include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
 
 /////Version Identifier/////////
-uint32_t firmver = 240428;
+uint32_t firmver = 240429;
 
 BMSManager bms;
 EEPROMSettings settings;
@@ -2245,7 +2245,7 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
   byte BMC_Addr = 1; //[ToDo] Initial testing. Assign address globally -> settings.
   
   if(inMSG.id == 0x4200 && inMSG.buf[0] == 0){ // Broadcast from Inverter asking for System Data
-    
+  //  if(1){
     CAN_message_t MSG;
     MSG.len = 8;
     MSG.flags.extended = true;
@@ -2326,10 +2326,10 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     tmpAlarm |= tmp;
     tmp = (alarm[0] & 0b01000000);      // Bit7: Discharge Cell high Temp
     tmpAlarm |= tmp;
-    tmp = 0b00000000; // Bit8: Charge Overcurrent [ToDo]
-    tmpAlarm |= tmp;
-    tmp = 0b01000000; // Bit9: Discharge Overcurrent [ToDo]
-    tmpAlarm |= tmp;
+    //tmp = 0b00000000; // Bit8: Charge Overcurrent [ToDo]
+    //tmpAlarm |= tmp;
+    //tmp = 0b01000000; // Bit9: Discharge Overcurrent [ToDo]
+    //tmpAlarm |= tmp;
 
     MSG.id  = 0x4250 + BMC_Addr;
     MSG.buf[0] = 0b00000011; // bit0-2: 0 = sleep, 1 = Charge, 2 = Discharge, 3 = Idle; Bit3: Force Charge; Bit4: Force Balance Charge; Bit5-7: Reserved; [ToDo]
@@ -2342,6 +2342,7 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.buf[7] = 0; // Protection same as Alarm? [ToDo]
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
+    //SERIALCONSOLE.println(tmpAlarm);
 
     MSG.id  = 0x4260 + BMC_Addr; // Module Voltage MIN / MAX & Nr.
     MSG.id  = 0x4270 + BMC_Addr; // Module Temp. MIN / MAX & Nr.
