@@ -1868,13 +1868,11 @@ void ChargeCurrentLimit(){
   if (chargecurrent > 0){
     //Temperature based
     if (WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_ChargeTLow)){
-    //if (bms.getLowTemperature() < settings.UnderTWarn){
-      tmp_chargecurrent = map(bms.getLowTemperature()*10, settings.UnderTAlarm*10, settings.UnderTWarn*10, 0, settings.ChargerChargeCurrentMax);
+      tmp_chargecurrent = map(bms.getLowTemperature(), settings.UnderTAlarm, settings.UnderTWarn, 0, settings.ChargerChargeCurrentMax);
       chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
     }
     if (WarnAlarm_Check(WarnAlarm_Warning, WarnAlarm_ChargeTHigh)){
-    //if (bms.getHighTemperature() > settings.OverTWarn){
-      tmp_chargecurrent = map(bms.getHighTemperature()*10, settings.OverTWarn*10, settings.OverTAlarm*10, settings.ChargerChargeCurrentMax, 0);
+      tmp_chargecurrent = map(bms.getHighTemperature(), settings.OverTWarn, settings.OverTAlarm, settings.ChargerChargeCurrentMax, 0);
       chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
     }    
     //Voltage based
@@ -1892,8 +1890,8 @@ void ChargeCurrentLimit(){
        }
     }
     // 16A Limit
-    tmp_chargecurrent = 3600 / (round(double(bms.getPackVoltage()) / 1000)) * 95 / 10; //3,6kW max, 95% Eff. , factor 10 [ToDo] make conf. + CAN
-    chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
+    //tmp_chargecurrent = 3600 / (round(double(bms.getPackVoltage()) / 1000)) * 95 / 10; //3,6kW max, 95% Eff. , factor 10 [ToDo] make conf. + CAN
+    //chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
   }   
 
   // compensate for consumers if Chargecurrent is 0 [ToTest]
@@ -2342,7 +2340,6 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.buf[7] = 0; // Protection same as Alarm? [ToDo]
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
-    //SERIALCONSOLE.println(tmpAlarm);
 
     MSG.id  = 0x4260 + BMC_Addr; // Module Voltage MIN / MAX & Nr.
     MSG.id  = 0x4270 + BMC_Addr; // Module Temp. MIN / MAX & Nr.
