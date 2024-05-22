@@ -752,14 +752,14 @@ byte Warn_Out_handle(){
 
 void set_BMC_Status(byte status){
   switch (status){
-    case Stat_Boot:  //[ToDO] change to maintenance mode?
+    case Stat_Boot:  //[ToDO] not used. Change to maintenance mode?
       set_OUT_States(); // all off
-      Balancing(0);
+      Balancing(false);
     break;
     case Stat_Ready:
       precharged = 0;
       set_OUT_States(); // all off
-      Balancing();
+      Balancing(true);
       Warn_Out_handle();
     break;
     case Stat_Drive:
@@ -769,13 +769,13 @@ void set_BMC_Status(byte status){
       set_OUT_States(Out_Gauge);
       DischargeCurrentLimit();
       Warn_Out_handle();
-      Balancing(0);
+      Balancing(false);
       CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
     case Stat_Precharge:
       set_OUT_States(); // all off
       Prechargecon();
-      Balancing(0);
+      Balancing(false);
       CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;    
     case Stat_Charge:
@@ -784,7 +784,7 @@ void set_BMC_Status(byte status){
       if (Settings_unsaved){EEPROM.put(0, settings); Settings_unsaved = 0; SERIALCONSOLE.printf("--Saved--\r\n");}
       set_OUT_States(Out_Charge); // enable charger
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on
-      Balancing();
+      Balancing(true);
       CAN_Charger_Send(settings.CAN_Map[0][CAN_Charger]);
       ChargeCurrentLimit();
       Warn_Out_handle();
@@ -793,7 +793,7 @@ void set_BMC_Status(byte status){
     case Stat_Charged:
       set_OUT_States(); // all off
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
-      Balancing();
+      Balancing(true);
       chargecurrentlast = 0;
       Warn_Out_handle();
       //CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
@@ -806,7 +806,7 @@ void set_BMC_Status(byte status){
         set_OUT_States(Out_Err_Warn);
         if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
         if (digitalRead(IN1_Key) == HIGH && ChargeActive()){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);}
-        Balancing(0);
+        Balancing(false);
         discurrent = 0;
         chargecurrent = 0;
       }
@@ -817,7 +817,7 @@ void set_BMC_Status(byte status){
       set_OUT_States(Out_Cont_Pos);
       set_OUT_States(Out_Cont_Neg);
       set_OUT_States(Out_Gauge);
-      Balancing();
+      Balancing(true);
       DischargeCurrentLimit();
       ChargeCurrentLimit();
       Warn_Out_handle();
@@ -849,8 +849,8 @@ void BMC_Status_LED(){
   }
 }
 
-byte Balancing(byte active){
-  if (bms.getHighCellVolt() > settings.balanceVoltage && bms.getHighCellVolt() > bms.getLowCellVolt() + settings.balanceHyst && active){
+bool Balancing(bool active){
+  if (active && bms.getHighCellVolt() > settings.balanceVoltage && bms.getHighCellVolt() > bms.getLowCellVolt() + settings.balanceHyst){
     bms.Balancing(settings.balanceHyst, true);
     return 1;
   } else {
@@ -879,7 +879,7 @@ void SERIALCONSOLEprint(bool Modules_Print_ON){
   SERIALCONSOLE.printf("Vpack: %5.2fV | Vlow: %4umV | Vhigh: %4umV | DeltaV: %4umV | Tlow: %3.1f°C | Thigh: %3.1f°C\r\n",double(bms.getPackVoltage()) / 1000,bms.getLowCellVolt(),bms.getHighCellVolt(),bms.getHighCellVolt() - bms.getLowCellVolt(),float(bms.getLowTemperature()) / 10,float(bms.getHighTemperature()) / 10);
   SERIALCONSOLE.printf("Cells: %u/%u",bms.getSeriesCells(),settings.Scells * settings.Pstrings);
 
-  if (Balancing()){ SERIALCONSOLE.printf(" | Balancing Active\r\n\n"); } else { SERIALCONSOLE.printf("\r\n\n"); }
+  if (bms.getBalancing()){ SERIALCONSOLE.printf(" | Balancing Active\r\n\n"); } else { SERIALCONSOLE.printf("\r\n\n"); }
   if(Modules_Print_ON){bms.printPackDetails();}
   else{SERIALCONSOLE.printf("Modules / Cells hidden\r\n");}
   if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_External)){
