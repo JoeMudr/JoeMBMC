@@ -145,7 +145,7 @@ CAN_Struct BMSManager::poll(){
         break;
 
         case BMS_Tesla:
-            if(millis() - polltime < 500) break; // poll erevy 500ms
+            if(millis() - polltime < 500) break; // poll every 500ms
             moduleReadCnt = 0;
             polltime = millis();
 
@@ -413,8 +413,8 @@ void BMSManager::clearModules(){
     }    
 }
 
-byte BMSManager::getBalancingCells(byte module_id){
-  if (modules[module_id].isExisting()){return balancingCells[module_id];}
+byte BMSManager::getBalancingCells(byte moduleNr){
+  if (modules[moduleNr].isExisting()){return balancingCells[moduleNr];}
   else{return 254;}    
 }
 

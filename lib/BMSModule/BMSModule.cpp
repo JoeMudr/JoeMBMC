@@ -19,7 +19,6 @@ BMSModule::BMSModule(){
     CMUerror = 0;
     timeout = 30000; //milliseconds before comms timeout;
     BMSType = BMS_Dummy; // mandatory
-    ModuleAddress = 0;
 }
 
 void BMSModule::initModule(BMS_t BMS_Type, uint16_t IgnoreV, byte tempsensor){
@@ -215,8 +214,8 @@ bool BMSModule::Tesla_readModule(){
         float tempTemp;
 
         payload[0] = moduleAddress << 1;
-        delay(2); // [Todo]???
-        payload[0] = moduleAddress << 1;
+        //delay(2); // [Todo]???
+        //payload[0] = moduleAddress << 1;
 
         readStatus();
 
