@@ -6,7 +6,7 @@ void Reset_Cause(uint32_t resetStatusReg);
 void BMSInit();
 void mAmpsec_calc();
 bool WarnAlarm_Check(byte Type = 0, byte WarnAlarm = WarnAlarm_Dummy);
-bool Balancing(bool active = 1);
+void Balancing(bool active);
 void BMS_Poll();
 void BMC_Status_LED();
 byte Vehicle_CondCheck(byte tmp_status);

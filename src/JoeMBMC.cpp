@@ -849,13 +849,11 @@ void BMC_Status_LED(){
   }
 }
 
-bool Balancing(bool active){
+void Balancing(bool active){
   if (active && bms.getHighCellVolt() > settings.balanceVoltage && bms.getHighCellVolt() > bms.getLowCellVolt() + settings.balanceHyst){
     bms.Balancing(settings.balanceHyst, true);
-    return 1;
   } else {
     bms.Balancing(settings.balanceHyst, false);
-    return 0;
   }
 }
 
@@ -2078,7 +2076,7 @@ void CAN_read(){
 
 void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   
-  if(CAN_BMC_Std_send_Timer + 1000 >= millis()){return;} // Timer 1s;
+  if(CAN_BMC_Std_send_Timer + 500 >= millis()){return;} // Timer 1s;
   if(!CAN_Nr){return;} // No CanNr. set.
 
   CAN_message_t MSG;
@@ -2552,7 +2550,7 @@ void CAN_MC_read(CAN_message_t MSG){
 
 void CAN_TCU_read(CAN_message_t MSG){
   TCU_Pump = TCU_Cool = TCU_Heat = TCU_REL4 = 0;
-  if (MSG.id == 0xBA){
+  if (MSG.id == 0x7FF){
     TCU_Pump = MSG.buf[0];
     TCU_Cool = MSG.buf[1];
     TCU_Heat = MSG.buf[2];
