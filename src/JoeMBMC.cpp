@@ -29,7 +29,7 @@
 #include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
 
 /////Version Identifier/////////
-uint32_t firmver = 240429;
+uint32_t firmver = 240601;
 
 BMSManager bms;
 EEPROMSettings settings;
