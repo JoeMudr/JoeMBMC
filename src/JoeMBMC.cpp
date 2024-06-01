@@ -1338,6 +1338,8 @@ void Menu(){
   String menu_option_string;
   char menu_option_char;
   int32_t menu_option_val = 0;
+  float menu_option_val_Float = 0.0;
+  String menu_option_val_String = "0";  
 //  menu_option = 0;
    
   if (SERIALCONSOLE.available()){
@@ -1349,6 +1351,8 @@ void Menu(){
     for (uint16_t i = 0; i < menu_option_string.length(); i++) {
       if (menu_option_string.substring(i, i+1) == "=") { 
         menu_option_val = menu_option_string.substring(i+1).toInt();
+        menu_option_val_Float = menu_option_string.substring(i+1).toFloat();
+        menu_option_val_String = menu_option_string.substring(i+1);        
         break;
       }
     }
@@ -1791,8 +1795,8 @@ void Menu(){
     break;     
     case Menu_Misc:
       switch (menu_option){
-        //case 1: settings.ExpMess = !settings.ExpMess; Menu(); break;
         case 1: settings.secondarySerial++; if(settings.secondarySerial > 2){settings.secondarySerial = 0;} Menu(); break;
+        case 2: settings.batteryID = strtol(menu_option_val_String.c_str(),NULL,16); Menu(); break;
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
@@ -1800,11 +1804,12 @@ void Menu(){
           SERIALCONSOLE.printf("--------------------\r\n");
           SERIALCONSOLE.printf("[1] Second Serial Port: ");
           switch (settings.secondarySerial){
-            case 0: SERIALCONSOLE.printf("%20s\r\n","Serial Display"); break;
-            case 1: SERIALCONSOLE.printf("%20s\r\n","Can Bus Expansion"); break;
-            case 2: SERIALCONSOLE.printf("%20s\r\n","Bluetooth App"); break;
+            case 0: SERIALCONSOLE.printf("%s\r\n","Serial Display"); break;
+            case 1: SERIALCONSOLE.printf("%s\r\n","undefined"); break;
+            case 2: SERIALCONSOLE.printf("%s\r\n","Bluetooth App (not used)"); break;
           
           }
+          SERIALCONSOLE.printf("[2] Battery ID (HEX):   %#x\r\n",settings.batteryID);
           SERIALCONSOLE.printf("\r\n");
           SERIALCONSOLE.printf("[q] Quit\r\n");
       }
@@ -2238,7 +2243,6 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
 }
 
 void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
-  byte BMC_Addr = 1; //[ToDo] Initial testing. Assign address globally -> settings.
   
   if(inMSG.id == 0x4200 && inMSG.buf[0] == 0){ // Broadcast from Inverter asking for System Data
   //  if(1){
@@ -2246,7 +2250,7 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.len = 8;
     MSG.flags.extended = true;
 
-    MSG.id  = 0x4210 + BMC_Addr;
+    MSG.id  = 0x4210 + settings.batteryID;
     MSG.buf[0] = lowByte(uint16_t(round(double(bms.getPackVoltage()) / 100)));
     MSG.buf[1] = highByte(uint16_t(round(double(bms.getPackVoltage()) / 100)));
     MSG.buf[2] = lowByte(int32_t(round(double(currentact) / 100) + 30000)); // [ToDo] values > ~6500A will overflow!
@@ -2259,7 +2263,7 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     if(CAN_Nr & 2){can2.write(MSG);}
 
     delay(2);
-    MSG.id  = 0x4220 + BMC_Addr;
+    MSG.id  = 0x4220 + settings.batteryID;
     if (storagemode){
       MSG.buf[0] = lowByte(uint16_t(round(float(settings.StoreVsetpoint) / 100 * settings.Scells)));
       MSG.buf[1] = highByte(uint16_t(round(float(settings.StoreVsetpoint) / 100 * settings.Scells)));    
@@ -2277,7 +2281,7 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     if(CAN_Nr & 2){can2.write(MSG);}
 
     delay(2);
-    MSG.id  = 0x4230 + BMC_Addr;
+    MSG.id  = 0x4230 + settings.batteryID;
     MSG.buf[0] = lowByte(bms.getLowCellVolt());
     MSG.buf[1] = highByte(bms.getLowCellVolt());
     MSG.buf[2] = lowByte(bms.getHighCellVolt());
@@ -2290,7 +2294,7 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     if(CAN_Nr & 2){can2.write(MSG);}
 
     delay(2);
-    MSG.id  = 0x4240 + BMC_Addr;
+    MSG.id  = 0x4240 + settings.batteryID;
     MSG.buf[0] = lowByte(uint16_t(bms.getHighTemperature() + 1000));
     MSG.buf[1] = highByte(uint16_t(bms.getHighTemperature() + 1000));
     MSG.buf[2] = lowByte(uint16_t(bms.getLowTemperature() + 1000));
@@ -2327,7 +2331,7 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     //tmp = 0b01000000; // Bit9: Discharge Overcurrent [ToDo]
     //tmpAlarm |= tmp;
 
-    MSG.id  = 0x4250 + BMC_Addr;
+    MSG.id  = 0x4250 + settings.batteryID;
     MSG.buf[0] = 0b00000011; // bit0-2: 0 = sleep, 1 = Charge, 2 = Discharge, 3 = Idle; Bit3: Force Charge; Bit4: Force Balance Charge; Bit5-7: Reserved; [ToDo]
     MSG.buf[1] = 0; // Cycle Period? [ToDo]
     MSG.buf[2] = 0; // Cycle Period? [ToDo]
@@ -2339,9 +2343,9 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
 
-    MSG.id  = 0x4260 + BMC_Addr; // Module Voltage MIN / MAX & Nr.
-    MSG.id  = 0x4270 + BMC_Addr; // Module Temp. MIN / MAX & Nr.
-    MSG.id  = 0x4280 + BMC_Addr; // Charge / Dischage foorbidden ?
+    MSG.id  = 0x4260 + settings.batteryID; // Module Voltage MIN / MAX & Nr.
+    MSG.id  = 0x4270 + settings.batteryID; // Module Temp. MIN / MAX & Nr.
+    MSG.id  = 0x4280 + settings.batteryID; // Charge / Dischage foorbidden ?
   }
 
   if(inMSG.id == 0x4200 && inMSG.buf[0] == 2){ // Broadcast from Inverter asking for System Information
@@ -2349,7 +2353,7 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.len = 8;
     MSG.flags.extended = true;
 
-    MSG.id = 0x7310 + BMC_Addr;
+    MSG.id = 0x7310 + settings.batteryID;
     MSG.buf[0] = 0; // Version 1=A, 2=B
     MSG.buf[1] = 0; // reserved
     MSG.buf[2] = 3; // Hardware Version e.g. 3.2
@@ -2362,7 +2366,7 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     if(CAN_Nr & 2){can2.write(MSG);}
 
     delay(2);
-    MSG.id = 0x7320 + BMC_Addr;
+    MSG.id = 0x7320 + settings.batteryID;
     MSG.buf[0] = lowByte(bms.getNumModules());
     MSG.buf[0] = highByte(bms.getNumModules());
     MSG.buf[2] = bms.getNumModules();
@@ -2375,7 +2379,7 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     if(CAN_Nr & 2){can2.write(MSG);}
 
     delay(2);
-    MSG.id = 0x7330 + BMC_Addr;
+    MSG.id = 0x7330 + settings.batteryID;
     MSG.buf[0] = bmcname[0];
     MSG.buf[1] = bmcname[1];
     MSG.buf[2] = bmcname[2];
@@ -2388,7 +2392,7 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     if(CAN_Nr & 2){can2.write(MSG);}
 
     delay(2);
-    MSG.id = 0x7340 + BMC_Addr;
+    MSG.id = 0x7340 + settings.batteryID;
     MSG.buf[0] = 0;
     MSG.buf[1] = 0;
     MSG.buf[2] = 0;

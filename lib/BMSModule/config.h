@@ -148,7 +148,7 @@ enum {
   CAN_MC, CAN_MAP_MAX
 };
 
-#define EEPROM_VERSION      0x28   //update any time EEPROM struct below is changed.
+#define EEPROM_VERSION      40   //update any time EEPROM struct below is changed.
 #define EEPROM_PAGE         0
 
 typedef struct {
