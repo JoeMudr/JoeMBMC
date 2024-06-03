@@ -1,7 +1,7 @@
 #include <Arduino.h> 
 #include <FlexCAN_T4.h>
 #include <config.h>
- 
+
 void Reset_Cause(uint32_t resetStatusReg);
 void BMSInit();
 void mAmpsec_calc();
@@ -41,7 +41,7 @@ void WDOG_reset();
 void Menu();
 void ContCon();
 void Current_debug();
-void SERIALCONSOLEprint(bool Module_Print_ON);
+void Serial_Print(bool Module_Print_ON);
 void Input_Debug(); 
 void Output_debug();
 byte Gauge_update();

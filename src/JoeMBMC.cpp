@@ -29,7 +29,7 @@
 #include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
 
 /////Version Identifier/////////
-uint32_t firmver = 240601;
+uint32_t firmver = 240603;
 
 BMSManager bms;
 EEPROMSettings settings;
@@ -359,20 +359,19 @@ void setup(){
   adc->adc0->startContinuous(ACUR1);
 
   //delay(2000);  //just for easy debugging. It takes a few seconds for USB to come up properly on most OS's  
-  SERIALCONSOLE.begin(115200);
-  SERIALCONSOLE.setTimeout(20);
-  SERIALCONSOLE.printf("Starting up...\r\n");
-  SERIALCONSOLE.printf("JoeM BMC\r\n");
-
+  Serial_USB.begin(115200);
+  Serial_USB.setTimeout(20);
+  Serial_BT.begin(115200);
+  activeSerial->printf("Starting up...\r\n");
+  activeSerial->printf("JoeM BMC\r\n");
   //display and can adpater canbus
-  DisplaySerial.begin(115200); 
+  Serial_Display.begin(115200); 
+  //Tesla serial bus
+  Serial_BMS.begin(612500);
+  activeSerial->printf("Started serial interface to Tesla-BMS.\r\n");
 
   // enable WDT
   watchdog.begin(watchdog_config);
-
-  //Tesla serial bus
-  SERIALBMS.begin(612500);
-  SERIALCONSOLE.printf("Started serial interface to Tesla-BMS.\r\n");
 
   BMSInit();
 
@@ -403,10 +402,10 @@ void loop(){
   }
 
   // make serial console available after 3s
-  if (millis() > 3000 && SERIALCONSOLE.available()){
+  if (millis() > 3000 && Serial_USB.available()){
     if(menu_load){Menu();}
     else{
-      char tmp_Char = SERIALCONSOLE.read();
+      char tmp_Char = Serial_USB.read();
       if(tmp_Char == 'o'){Out_Print_ON = !Out_Print_ON;}
       if(tmp_Char == 'b'){Modules_Print_ON = !Modules_Print_ON;}
       if(tmp_Char == 'm'){menu_load = 1; Menu();}
@@ -452,7 +451,7 @@ void loop(){
 
     if (!menu_load){ 
       // main debug output
-      SERIALCONSOLEprint(Modules_Print_ON); 
+      Serial_Print(Modules_Print_ON); 
       // OUT functions and states
       OUT_print(Out_Print_ON);
       // Display reason the Teensy was last reset
@@ -479,37 +478,37 @@ void loop(){
 // i.MX RT1060 Processor Reference Manual, 21.8.3 SRC Reset Status Register
 void Reset_Cause(uint32_t resetStatusReg) {
   bool info = false;
-  SERIALCONSOLE.printf("\r\nReason for last Reset: ");
+  activeSerial->printf("\r\nReason for last Reset: ");
   if (resetStatusReg & SRC_SRSR_TEMPSENSE_RST_B) {
-      Serial.printf("Temperature Sensor Software Reset\r\n");
+      activeSerial->printf("Temperature Sensor Software Reset\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_WDOG3_RST_B) {
-      Serial.printf("IC Watchdog3 Timeout Reset\r\n");
+      activeSerial->printf("IC Watchdog3 Timeout Reset\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_JTAG_SW_RST) {
-      Serial.printf("JTAG Software Reset\r\n");
+      activeSerial->printf("JTAG Software Reset\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_JTAG_RST_B) {
-      Serial.printf("High-Z JTAG Reset\r\n");
+      activeSerial->printf("High-Z JTAG Reset\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_WDOG_RST_B) {
-      Serial.printf("IC Watchdog Timeout Reset\r\n");
+      activeSerial->printf("IC Watchdog Timeout Reset\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_IPP_USER_RESET_B) {
-      Serial.printf("Power-up Sequence (Cold Reset Event)\r\n");
+      activeSerial->printf("Power-up Sequence (Cold Reset Event)\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_CSU_RESET_B) {
-      Serial.printf("Central Security Unit Reset\r\n");
+      activeSerial->printf("Central Security Unit Reset\r\n");
       info = true;
   }
   if (resetStatusReg & SRC_SRSR_LOCKUP_SYSRESETREQ) {
-      Serial.printf("CPU Lockup or Software Reset\r\n");
+      activeSerial->printf("CPU Lockup or Software Reset\r\n");
       info = true;
       /* Per datasheet: "SW needs to write a value to SRC_GPR5
        * before writing the SYSRESETREQ bit and use the SRC_GPR5
@@ -518,11 +517,11 @@ void Reset_Cause(uint32_t resetStatusReg) {
        */
   }
   if (resetStatusReg & SRC_SRSR_IPP_RESET_B) {
-      Serial.printf("Power-up Sequence\r\n");
+      activeSerial->printf("Power-up Sequence\r\n");
       info = true;
   }
   if (!info) {
-      Serial.printf("No status bits set in SRC Reset Status Register\r\n");
+      activeSerial->printf("No status bits set in SRC Reset Status Register\r\n");
   }
 }
 
@@ -781,7 +780,7 @@ void set_BMC_Status(byte status){
     case Stat_Charge:
       set_OUT_States(); // all off
       CAP_recalc();
-      if (Settings_unsaved){EEPROM.put(0, settings); Settings_unsaved = 0; SERIALCONSOLE.printf("--Saved--\r\n");}
+      if (Settings_unsaved){EEPROM.put(0, settings); Settings_unsaved = 0; activeSerial->printf("--Saved--\r\n");}
       set_OUT_States(Out_Charge); // enable charger
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on
       Balancing(true);
@@ -857,66 +856,66 @@ void Balancing(bool active){
   }
 }
 
-void SERIALCONSOLEprint(bool Modules_Print_ON){
+void Serial_Print(bool Modules_Print_ON){
   Serial_clear();
-  SERIALCONSOLE.printf("Firmware:   %i\r\n", firmver);
-  SERIALCONSOLE.printf("BMC Status: ");
+  activeSerial->printf("Firmware:   %i\r\n", firmver);
+  activeSerial->printf("BMC Status: ");
   switch (BMC_Stat){
-    case (Stat_Boot): SERIALCONSOLE.printf("Boot"); break;
-    case (Stat_Ready): SERIALCONSOLE.printf("Ready"); break;
-    case (Stat_Precharge): SERIALCONSOLE.printf("Precharge"); break;
-    case (Stat_Drive): SERIALCONSOLE.printf("Drive"); break;
-    case (Stat_Charge): SERIALCONSOLE.printf("Charge"); break;
-    case (Stat_Charged): SERIALCONSOLE.printf("Charged"); break;
-    case (Stat_Error): SERIALCONSOLE.printf("Error"); break;
-    case (Stat_Idle): SERIALCONSOLE.printf("Idle"); break;
+    case (Stat_Boot): activeSerial->printf("Boot"); break;
+    case (Stat_Ready): activeSerial->printf("Ready"); break;
+    case (Stat_Precharge): activeSerial->printf("Precharge"); break;
+    case (Stat_Drive): activeSerial->printf("Drive"); break;
+    case (Stat_Charge): activeSerial->printf("Charge"); break;
+    case (Stat_Charged): activeSerial->printf("Charged"); break;
+    case (Stat_Error): activeSerial->printf("Error"); break;
+    case (Stat_Idle): activeSerial->printf("Idle"); break;
   }
-  if (Warn_Out_handle()){SERIALCONSOLE.printf(" (Warning!)\r\n");} else {SERIALCONSOLE.printf("\r\n");}
+  if (Warn_Out_handle()){activeSerial->printf(" (Warning!)\r\n");} else {activeSerial->printf("\r\n");}
 
-  SERIALCONSOLE.printf("\r\nCharge Current Limit: %5.2fA (%5.2fA), Factor: %3u% | Discharge Current Limit: %5.2fA \r\n",float(chargecurrent) * settings.nChargers / 10, float(chargecurrent) / 10, chargecurrentFactor, float(discurrent) / 10);
-  SERIALCONSOLE.printf("Vpack: %5.2fV | Vlow: %4umV | Vhigh: %4umV | DeltaV: %4umV | Tlow: %3.1f°C | Thigh: %3.1f°C\r\n",double(bms.getPackVoltage()) / 1000,bms.getLowCellVolt(),bms.getHighCellVolt(),bms.getHighCellVolt() - bms.getLowCellVolt(),float(bms.getLowTemperature()) / 10,float(bms.getHighTemperature()) / 10);
-  SERIALCONSOLE.printf("Cells: %u/%u",bms.getSeriesCells(),settings.Scells * settings.Pstrings);
+  activeSerial->printf("\r\nCharge Current Limit: %5.2fA (%5.2fA), Factor: %3u% | Discharge Current Limit: %5.2fA \r\n",float(chargecurrent) * settings.nChargers / 10, float(chargecurrent) / 10, chargecurrentFactor, float(discurrent) / 10);
+  activeSerial->printf("Vpack: %5.2fV | Vlow: %4umV | Vhigh: %4umV | DeltaV: %4umV | Tlow: %3.1f°C | Thigh: %3.1f°C\r\n",double(bms.getPackVoltage()) / 1000,bms.getLowCellVolt(),bms.getHighCellVolt(),bms.getHighCellVolt() - bms.getLowCellVolt(),float(bms.getLowTemperature()) / 10,float(bms.getHighTemperature()) / 10);
+  activeSerial->printf("Cells: %u/%u",bms.getSeriesCells(),settings.Scells * settings.Pstrings);
 
-  if (bms.getBalancing()){ SERIALCONSOLE.printf(" | Balancing Active\r\n\n"); } else { SERIALCONSOLE.printf("\r\n\n"); }
+  if (bms.getBalancing()){ activeSerial->printf(" | Balancing Active\r\n\n"); } else { activeSerial->printf("\r\n\n"); }
   if(Modules_Print_ON){bms.printPackDetails();}
-  else{SERIALCONSOLE.printf("Modules / Cells hidden\r\n");}
+  else{activeSerial->printf("Modules / Cells hidden\r\n");}
   if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_External)){
-    SERIALCONSOLE.printf("!!! Internal Error / Series Cells Fault !!!\r\n\n");
-  } else { SERIALCONSOLE.printf("\r\n");}
+    activeSerial->printf("!!! Internal Error / Series Cells Fault !!!\r\n\n");
+  } else { activeSerial->printf("\r\n");}
   
   if (settings.CurSenType == Sen_AnalogueDual){
     if (Sen_Analogue_Num == 1)
-      { SERIALCONSOLE.printf("Analogue Low:  "); }
+      { activeSerial->printf("Analogue Low:  "); }
     else if (Sen_Analogue_Num == 2)
-      { SERIALCONSOLE.printf("Analogue High: "); }
+      { activeSerial->printf("Analogue High: "); }
   }
   if (settings.CurSenType == Sen_AnalogueSing)
-    {SERIALCONSOLE.printf("Analogue Single: ");}
+    {activeSerial->printf("Analogue Single: ");}
   if (settings.CurSenType == Sen_Canbus)
-    {SERIALCONSOLE.printf("CANbus: ");}
-  SERIALCONSOLE.printf("%6imA\r\n",currentact);
-  SERIALCONSOLE.printf("SOC:       %3u%%  (%.2fmAh)\r\n",SOC,double(mampsecond) / 3600);
-  SERIALCONSOLE.printf("SOH:       %3u%%  (%u/%uAh)\r\n",SOH_calc(),settings.CAP,settings.designCAP);
-  SERIALCONSOLE.printf("TCap:      %3uAh (%uWh)\r\n",abs(TCAP),abs(TCAP_Wh));
+    {activeSerial->printf("CANbus: ");}
+  activeSerial->printf("%6imA\r\n",currentact);
+  activeSerial->printf("SOC:       %3u%%  (%.2fmAh)\r\n",SOC,double(mampsecond) / 3600);
+  activeSerial->printf("SOH:       %3u%%  (%u/%uAh)\r\n",SOH_calc(),settings.CAP,settings.designCAP);
+  activeSerial->printf("TCap:      %3uAh (%uWh)\r\n",abs(TCAP),abs(TCAP_Wh));
   int32_t minutes = ETA();
-  SERIALCONSOLE.printf("ETA:       %2ih %2im\r\n",minutes / 60,minutes % 60);
-  SERIALCONSOLE.printf("Warning:   ");
+  activeSerial->printf("ETA:       %2ih %2im\r\n",minutes / 60,minutes % 60);
+  activeSerial->printf("Warning:   ");
   for (byte i = 0; i < 4; i++){
-    SERIALCONSOLE.printf("%08i ",ConvertToBin(warning[i])); // [ToDo] in Binary
+    activeSerial->printf("%08i ",ConvertToBin(warning[i])); // [ToDo] in Binary
   }
-  SERIALCONSOLE.printf("\r\n");
-  SERIALCONSOLE.printf("Error:     ");
+  activeSerial->printf("\r\n");
+  activeSerial->printf("Error:     ");
   for (byte i = 0; i < 4; i++){
-    SERIALCONSOLE.printf("%08i ",ConvertToBin(alarm[i])); // [ToDo] in Binary
+    activeSerial->printf("%08i ",ConvertToBin(alarm[i])); // [ToDo] in Binary
   }
-  SERIALCONSOLE.printf("\r\n");
-  SERIALCONSOLE.printf("\r\n");
+  activeSerial->printf("\r\n");
+  activeSerial->printf("\r\n");
 
-  SERIALCONSOLE.printf("IN %d%d%d%d %s %s\r\n",digitalRead(IN1_Key),digitalRead(IN2_Gen),digitalRead(IN3_AC),digitalRead(IN4),ChargeActive()?"| Charger plugged":"",digitalRead(IN1_Key)?"| Key ON":"");
+  activeSerial->printf("IN %d%d%d%d %s %s\r\n",digitalRead(IN1_Key),digitalRead(IN2_Gen),digitalRead(IN3_AC),digitalRead(IN4),ChargeActive()?"| Charger plugged":"",digitalRead(IN1_Key)?"| Key ON":"");
   if(TCU_Pump || TCU_Cool || TCU_Heat || TCU_REL4){
-    SERIALCONSOLE.printf("TCU: %s%s%s%s\r\n",TCU_Pump-1?"Pumping ":"",TCU_Cool-1?"Cooling ":"",TCU_Heat-1?"Heating ":"",TCU_REL4-1?"REL4":"");
+    activeSerial->printf("TCU: %s%s%s%s\r\n",TCU_Pump-1?"Pumping ":"",TCU_Cool-1?"Cooling ":"",TCU_Heat-1?"Heating ":"",TCU_REL4-1?"REL4":"");
   }
-  SERIALCONSOLE.printf("\r\n");
+  activeSerial->printf("\r\n");
 }
 
 uint32_t ConvertToBin(uint32_t Input){
@@ -1039,23 +1038,23 @@ void CAN_Debug_IN(byte CanNr, CAN_message_t MSG){
   int16_t pgn = 0;
   
   switch (CanNr){
-    case 1: SERIALCONSOLE.printf("CAN1 "); break;
-    case 2: SERIALCONSOLE.printf("CAN2 "); break;
+    case 1: activeSerial->printf("CAN1 "); break;
+    case 2: activeSerial->printf("CAN2 "); break;
   }
-  SERIALCONSOLE.printf("IN ");
+  activeSerial->printf("IN ");
   if (MSG.flags.extended){
-    SERIALCONSOLE.printf("ext:%x  ",MSG.id);
+    activeSerial->printf("ext:%x  ",MSG.id);
     pgn = pgnFromCANId(MSG.id);
   } else {
-    SERIALCONSOLE.printf("std:%x  ",MSG.id);
+    activeSerial->printf("std:%x  ",MSG.id);
   }
   for (byte i = 0; i < MSG.len; i++) { // print the data
-    SERIALCONSOLE.printf("%x ",MSG.buf[i]);
+    activeSerial->printf("%x ",MSG.buf[i]);
   }
   if(pgn){
-    SERIALCONSOLE.printf("PGN: %i",pgn);
+    activeSerial->printf("PGN: %i",pgn);
   }
-  SERIALCONSOLE.printf("\r\n");
+  activeSerial->printf("\r\n");
 }
 
 void Currentavg_Calc(){
@@ -1074,20 +1073,20 @@ void Currentavg_Calc(){
 void Current_debug(){
   if ( settings.CurSenType == Sen_AnalogueDual || settings.CurSenType == Sen_AnalogueSing){
     if (Sen_Analogue_Num == 1){
-      SERIALCONSOLE.printf("\r\n");
+      activeSerial->printf("\r\n");
       if (settings.CurSenType == Sen_AnalogueDual)
-      {SERIALCONSOLE.printf("Low Range: ");}
+      {activeSerial->printf("Low Range: ");}
       else
-      {SERIALCONSOLE.printf("Single In: ");}
-      SERIALCONSOLE.printf("Value ADC0: %i  %i  %i  %imA  ",Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue(),settings.analogueSen1_offset,Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue() - settings.analogueSen1_offset,RawCur);
+      {activeSerial->printf("Single In: ");}
+      activeSerial->printf("Value ADC0: %i  %i  %i  %imA  ",Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue(),settings.analogueSen1_offset,Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue() - settings.analogueSen1_offset,RawCur);
     }else if (Sen_Analogue_Num == 2){
-      SERIALCONSOLE.printf("\r\n");
-      SERIALCONSOLE.printf("High Range: Value ADC0: %i  %i  %i  %imA  ",Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue(),settings.analogueSen2_offset,Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue() - settings.analogueSen2_offset,RawCur);
+      activeSerial->printf("\r\n");
+      activeSerial->printf("High Range: Value ADC0: %i  %i  %i  %imA  ",Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue(),settings.analogueSen2_offset,Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue() - settings.analogueSen2_offset,RawCur);
     }
-    SERIALCONSOLE.printf("%.2f | %i | %imA",lowpassFilter.output(),settings.analogueSen_ChangeCur,currentact); // [ToDo] eliminate float?
+    activeSerial->printf("%.2f | %i | %imA",lowpassFilter.output(),settings.analogueSen_ChangeCur,currentact); // [ToDo] eliminate float?
   }
   if ( settings.CurSenType == Sen_Canbus ) {
-    SERIALCONSOLE.printf("\r\n%imA",currentact);
+    activeSerial->printf("\r\n%imA",currentact);
   }
 }
 
@@ -1117,7 +1116,7 @@ void SOC_update(){
       if(!SOCset){
         SOCset = 1;
         if (!menu_load){
-          SERIALCONSOLE.printf("\r\n--------SOC SET: %i%%, %imAs--------",SOC,mampsecond);
+          activeSerial->printf("\r\n--------SOC SET: %i%%, %imAs--------",SOC,mampsecond);
         }
       }
     } else {
@@ -1254,21 +1253,21 @@ void set_OUTs(){
 void OUT_print(bool Out_Print_ON){
   if(!Out_Print_ON){return;}
 
-  SERIALCONSOLE.printf("Function         State Timer\r\n");
-  SERIALCONSOLE.printf("----------------------------\r\n");
+  activeSerial->printf("Function         State Timer\r\n");
+  activeSerial->printf("----------------------------\r\n");
   for(byte i = 1; i < 12; i++){ //[ToDo] us array size for loop
-    SERIALCONSOLE.printf("%-16s %5i %5i\r\n",Out_Functions[i].c_str(),Out_States[0][i],Out_States[1][i]);
+    activeSerial->printf("%-16s %5i %5i\r\n",Out_Functions[i].c_str(),Out_States[0][i],Out_States[1][i]);
   } 
-  SERIALCONSOLE.printf("\r\n");
-  SERIALCONSOLE.printf("Output        Function  PWM\r\n");
-  SERIALCONSOLE.printf("---------------------------\r\n");
+  activeSerial->printf("\r\n");
+  activeSerial->printf("Output        Function  PWM\r\n");
+  activeSerial->printf("---------------------------\r\n");
   for(byte i = 1; i < 9; i++){ //[ToDo] us array size for loop
-    SERIALCONSOLE.printf("OUT%i   %16s ",i,Out_Functions[settings.Out_Map[0][i]].c_str());
+    activeSerial->printf("OUT%i   %16s ",i,Out_Functions[settings.Out_Map[0][i]].c_str());
     if(i>4){
-      if(settings.Out_Map[0][i] == Out_Gauge){SERIALCONSOLE.printf("%3i",Gauge_update());} // get Gauge PWM directly from function.
-      else {SERIALCONSOLE.printf("%3i",settings.Out_Map[1][i]);}
+      if(settings.Out_Map[0][i] == Out_Gauge){activeSerial->printf("%3i",Gauge_update());} // get Gauge PWM directly from function.
+      else {activeSerial->printf("%3i",settings.Out_Map[1][i]);}
     }
-    SERIALCONSOLE.printf("\r\n");
+    activeSerial->printf("\r\n");
   }  
 }
 
@@ -1311,26 +1310,26 @@ void CurrentOffsetCalc(){
 
   adc->adc0->startContinuous(ACUR1);
   Sen_Analogue_Num = 1;
-  SERIALCONSOLE.printf(" Calibrating Current Offset ");
+  activeSerial->printf(" Calibrating Current Offset ");
   for (byte i = 0; i < 20; i++){
     settings.analogueSen1_offset = settings.analogueSen1_offset + ((uint16_t)adc->adc0->analogReadContinuous() * 3300 / adc->adc0->getMaxValue());
-    SERIALCONSOLE.printf(".");
+    activeSerial->printf(".");
     delay(100);
   }
   settings.analogueSen1_offset = settings.analogueSen1_offset / 20;
-  SERIALCONSOLE.printf("\r\n Current offset 1 calibrated: %i \r\n",settings.analogueSen1_offset);
+  activeSerial->printf("\r\n Current offset 1 calibrated: %i \r\n",settings.analogueSen1_offset);
 
   if(settings.CurSenType == Sen_AnalogueDual){
     adc->adc0->startContinuous(ACUR2);
     Sen_Analogue_Num = 2;
-    SERIALCONSOLE.printf(" Calibrating Current Offset ");
+    activeSerial->printf(" Calibrating Current Offset ");
     for (byte i = 0; i < 20; i++){
       settings.analogueSen2_offset = settings.analogueSen2_offset + ((uint16_t)adc->adc0->analogReadContinuous() * 3300 / adc->adc0->getMaxValue());
-      SERIALCONSOLE.printf(".");
+      activeSerial->printf(".");
       delay(100);
     }
     settings.analogueSen2_offset = settings.analogueSen2_offset / 20;
-    SERIALCONSOLE.printf("\r\n Current offset 2 calibrated: %i",settings.analogueSen2_offset);
+    activeSerial->printf("\r\n Current offset 2 calibrated: %i",settings.analogueSen2_offset);
   }
 }
 
@@ -1342,8 +1341,8 @@ void Menu(){
   String menu_option_val_String = "0";  
 //  menu_option = 0;
    
-  if (SERIALCONSOLE.available()){
-    menu_option_string = SERIALCONSOLE.readString(); 
+  if (Serial_USB.available()){
+    menu_option_string = Serial_USB.readString(); 
     menu_option_char = menu_option_string.charAt(0);
     menu_option = menu_option_string.toInt();
     if (menu_option == 0){ menu_option = menu_option_char; }
@@ -1367,33 +1366,33 @@ void Menu(){
     case Menu_Start:
       menu_current = Menu_Main;
       Serial_clear();
-      SERIALCONSOLE.printf("Main\r\n");
-      SERIALCONSOLE.printf("--------------------\r\n");
-      SERIALCONSOLE.printf("[1]  Battery\r\n");
-      SERIALCONSOLE.printf("[2]  Current Sensor\r\n");
-      SERIALCONSOLE.printf("[3]  Charger\r\n");
-      SERIALCONSOLE.printf("[4]  Motor Controller\r\n");
-      SERIALCONSOLE.printf("[5]  Outputs\r\n");
-      SERIALCONSOLE.printf("[6]  Alarms\r\n");
-      SERIALCONSOLE.printf("[7]  Ignore Values\r\n");
-      SERIALCONSOLE.printf("[8]  CAN-Bus\r\n");
-      SERIALCONSOLE.printf("[9]  Misc.\r\n");
-      SERIALCONSOLE.printf("[10] Debug\r\n");
-      SERIALCONSOLE.printf("[11] Reboot\r\n");
-      SERIALCONSOLE.printf("[12] Load Defaults\r\n");
-      SERIALCONSOLE.printf("[13] Mode: %s\r\n",settings.ESSmode?"ESS":"Vehicle");
-      SERIALCONSOLE.printf("[14] BMS-Type: ");
+      activeSerial->printf("Main\r\n");
+      activeSerial->printf("--------------------\r\n");
+      activeSerial->printf("[1]  Battery\r\n");
+      activeSerial->printf("[2]  Current Sensor\r\n");
+      activeSerial->printf("[3]  Charger\r\n");
+      activeSerial->printf("[4]  Motor Controller\r\n");
+      activeSerial->printf("[5]  Outputs\r\n");
+      activeSerial->printf("[6]  Alarms\r\n");
+      activeSerial->printf("[7]  Ignore Values\r\n");
+      activeSerial->printf("[8]  CAN-Bus\r\n");
+      activeSerial->printf("[9]  Misc.\r\n");
+      activeSerial->printf("[10] Debug\r\n");
+      activeSerial->printf("[11] Reboot\r\n");
+      activeSerial->printf("[12] Load Defaults\r\n");
+      activeSerial->printf("[13] Mode: %s\r\n",settings.ESSmode?"ESS":"Vehicle");
+      activeSerial->printf("[14] BMS-Type: ");
       switch (settings.BMSType){
-        case BMS_Dummy: SERIALCONSOLE.printf("NONE\r\n"); break;
-        case BMS_Tesla: SERIALCONSOLE.printf("Tesla Model S/X\r\n"); break;
-        case BMS_VW_MEB:SERIALCONSOLE.printf("VW MEB\r\n");          break;
-        case BMS_VW_eGolf: SERIALCONSOLE.printf("VW eGolf/GTE\r\n"); break;
-        case BMS_BMW_I3: SERIALCONSOLE.printf("BMW i3\r\n"); break;
-        case BMS_BMW_MiniE: SERIALCONSOLE.printf("BMW MiniE\r\n"); break;
+        case BMS_Dummy: activeSerial->printf("NONE\r\n"); break;
+        case BMS_Tesla: activeSerial->printf("Tesla Model S/X\r\n"); break;
+        case BMS_VW_MEB:activeSerial->printf("VW MEB\r\n");          break;
+        case BMS_VW_eGolf: activeSerial->printf("VW eGolf/GTE\r\n"); break;
+        case BMS_BMW_I3: activeSerial->printf("BMW i3\r\n"); break;
+        case BMS_BMW_MiniE: activeSerial->printf("BMW MiniE\r\n"); break;
         default: break;
       }
-      SERIALCONSOLE.printf("\r\n");
-      SERIALCONSOLE.printf("[q]  Save & Quit\r\n");
+      activeSerial->printf("\r\n");
+      activeSerial->printf("[q]  Save & Quit\r\n");
     break;
     case Menu_Main:
       switch (menu_option){
@@ -1408,7 +1407,7 @@ void Menu(){
         case 9: menu_current = Menu_Misc; Menu(); break;   
         case 10: menu_current = Menu_Debug; Menu(); break; 
         case 11: SCB_AIRCR = 0x05FA0004; break;
-        case 12: loadDefaultSettings(); Menu(); SERIALCONSOLE.printf("::::::Defaults loaded::::::\r\n"); break;    
+        case 12: loadDefaultSettings(); Menu(); activeSerial->printf("::::::Defaults loaded::::::\r\n"); break;    
         case 13: settings.ESSmode = !settings.ESSmode; menu_current = Menu_Start; Menu(); break;       
         case 14: 
           if(settings.BMSType == BMS_Type_MAX){settings.BMSType = BMS_Dummy;} 
@@ -1421,7 +1420,7 @@ void Menu(){
           EEPROM.put(0, settings); //save all change to eeprom
           menu_current = Menu_Start;
           menu_load = 0;
-          SERIALCONSOLE.printf("::::::Settings saved::::::\r\n");
+          activeSerial->printf("::::::Settings saved::::::\r\n");
         break;
       }
     break;
@@ -1469,51 +1468,51 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.printf("Battery\r\n");
-          SERIALCONSOLE.printf("--------------------\r\n\r\n");
-          SERIALCONSOLE.printf("Cell limits:\r\n");    
-          SERIALCONSOLE.printf("[1] Cell Overvoltage Alarm (mV):            %4i\r\n",settings.OverVAlarm);
-          SERIALCONSOLE.printf("[2] Cell Overvoltage Warning (mV):          %4i\r\n",settings.OverVWarn); //
-          SERIALCONSOLE.printf("[3] Cell Undervoltage Warning (mV):         %4i\r\n",settings.UnderVWarn);  //   
-          SERIALCONSOLE.printf("[4] Cell Undervoltage Alarm (mV):           %4i\r\n",settings.UnderVAlarm); //
-          SERIALCONSOLE.printf("[5] Charge Voltage Setpoint (mV):           %4i\r\n",settings.ChargeVSetpoint); //
-          SERIALCONSOLE.printf("[6] Over Temperature Alarm (°C):            %4i\r\n",settings.OverTAlarm / 10);
-          SERIALCONSOLE.printf("[7] Over Temperature Warning (°C):          %4i\r\n",settings.OverTWarn / 10);
-          SERIALCONSOLE.printf("[8] Under Temperature Warning (°C):         %4i\r\n",settings.UnderTWarn / 10);
-          SERIALCONSOLE.printf("[9] Under Temperature Alarm (°C):           %4i\r\n",settings.UnderTAlarm / 10);
-          SERIALCONSOLE.printf("[10] Charge Over Temperature Alarm (°C):    %4i\r\n",settings.ChargeOverTAlarm / 10);
-          SERIALCONSOLE.printf("[11] Charge Over Temperature Warning (°C):  %4i\r\n",settings.ChargeOverTWarn / 10);
-          SERIALCONSOLE.printf("[12] Charge Under Temperature Warning (°C): %4i\r\n",settings.ChargeUnderTWarn / 10);
-          SERIALCONSOLE.printf("[13] Charge Under Temperature Alarm (°C):   %4i\r\n",settings.ChargeUnderTAlarm / 10);
-          SERIALCONSOLE.printf("[14] Cell Balance Voltage (mV):             %4i\r\n",settings.balanceVoltage);
-          SERIALCONSOLE.printf("[15] Balance Hysteresis (mV):               %4i\r\n",settings.balanceHyst);
-          SERIALCONSOLE.printf("[16] Cell Delta Voltage Alarm (mV):         %4i\r\n",settings.CellGap);
-          SERIALCONSOLE.printf("\r\n");
-          SERIALCONSOLE.printf("Pack configuration:\r\n");         
-          SERIALCONSOLE.printf("[17] Design Capacity (Ah):          %4i\r\n",settings.designCAP);
-          SERIALCONSOLE.printf("[18] Current Capacity (Ah):         %4i\r\n",settings.CAP); 
-          SERIALCONSOLE.printf("[19] Cells in Parallel:             %4i\r\n",settings.Pstrings);
-          SERIALCONSOLE.printf("[20] Cells in Series:               %4i\r\n",settings.Scells );
-          SERIALCONSOLE.printf("[21] Charge Current Alarm (A):      %4i\r\n",settings.ChargeOverCurrAlarm / 10);
-          SERIALCONSOLE.printf("[22] Charge Current Warning (A):    %4i\r\n",settings.ChargeOverCurrWarn / 10);          
-          SERIALCONSOLE.printf("[23] Discharge Current Alarm (A):   %4i\r\n",settings.OverCurrAlarm / 10);
-          SERIALCONSOLE.printf("[24] Discharge Current Warning (A): %4i\r\n",settings.OverCurrWarn / 10);
-          SERIALCONSOLE.printf("\r\n");
-          SERIALCONSOLE.printf("Voltage based SOC:\r\n");
-          SERIALCONSOLE.printf("[25] Setpoint1 (mV):        %4i\r\n",settings.socvolt[0]);
-          SERIALCONSOLE.printf("[26] SOC @ Setpoint1 (%%):   %4i\r\n",settings.socvolt[1]);
-          SERIALCONSOLE.printf("[27] Setpoint2 (mV):        %4i\r\n",settings.socvolt[2]);
-          SERIALCONSOLE.printf("[28] SOC @ Setpoint2 (%%):   %4i\r\n",settings.socvolt[3]);
-          SERIALCONSOLE.printf("[29] Storage Setpoint (mV): %4i\r\n",settings.StoreVsetpoint);
-          SERIALCONSOLE.printf("\r\n");
-          SERIALCONSOLE.printf("Temperature based SOC Adjustment:\r\n");
+          activeSerial->printf("Battery\r\n");
+          activeSerial->printf("--------------------\r\n\r\n");
+          activeSerial->printf("Cell limits:\r\n");    
+          activeSerial->printf("[1] Cell Overvoltage Alarm (mV):            %4i\r\n",settings.OverVAlarm);
+          activeSerial->printf("[2] Cell Overvoltage Warning (mV):          %4i\r\n",settings.OverVWarn); //
+          activeSerial->printf("[3] Cell Undervoltage Warning (mV):         %4i\r\n",settings.UnderVWarn);  //   
+          activeSerial->printf("[4] Cell Undervoltage Alarm (mV):           %4i\r\n",settings.UnderVAlarm); //
+          activeSerial->printf("[5] Charge Voltage Setpoint (mV):           %4i\r\n",settings.ChargeVSetpoint); //
+          activeSerial->printf("[6] Over Temperature Alarm (°C):            %4i\r\n",settings.OverTAlarm / 10);
+          activeSerial->printf("[7] Over Temperature Warning (°C):          %4i\r\n",settings.OverTWarn / 10);
+          activeSerial->printf("[8] Under Temperature Warning (°C):         %4i\r\n",settings.UnderTWarn / 10);
+          activeSerial->printf("[9] Under Temperature Alarm (°C):           %4i\r\n",settings.UnderTAlarm / 10);
+          activeSerial->printf("[10] Charge Over Temperature Alarm (°C):    %4i\r\n",settings.ChargeOverTAlarm / 10);
+          activeSerial->printf("[11] Charge Over Temperature Warning (°C):  %4i\r\n",settings.ChargeOverTWarn / 10);
+          activeSerial->printf("[12] Charge Under Temperature Warning (°C): %4i\r\n",settings.ChargeUnderTWarn / 10);
+          activeSerial->printf("[13] Charge Under Temperature Alarm (°C):   %4i\r\n",settings.ChargeUnderTAlarm / 10);
+          activeSerial->printf("[14] Cell Balance Voltage (mV):             %4i\r\n",settings.balanceVoltage);
+          activeSerial->printf("[15] Balance Hysteresis (mV):               %4i\r\n",settings.balanceHyst);
+          activeSerial->printf("[16] Cell Delta Voltage Alarm (mV):         %4i\r\n",settings.CellGap);
+          activeSerial->printf("\r\n");
+          activeSerial->printf("Pack configuration:\r\n");         
+          activeSerial->printf("[17] Design Capacity (Ah):          %4i\r\n",settings.designCAP);
+          activeSerial->printf("[18] Current Capacity (Ah):         %4i\r\n",settings.CAP); 
+          activeSerial->printf("[19] Cells in Parallel:             %4i\r\n",settings.Pstrings);
+          activeSerial->printf("[20] Cells in Series:               %4i\r\n",settings.Scells );
+          activeSerial->printf("[21] Charge Current Alarm (A):      %4i\r\n",settings.ChargeOverCurrAlarm / 10);
+          activeSerial->printf("[22] Charge Current Warning (A):    %4i\r\n",settings.ChargeOverCurrWarn / 10);          
+          activeSerial->printf("[23] Discharge Current Alarm (A):   %4i\r\n",settings.OverCurrAlarm / 10);
+          activeSerial->printf("[24] Discharge Current Warning (A): %4i\r\n",settings.OverCurrWarn / 10);
+          activeSerial->printf("\r\n");
+          activeSerial->printf("Voltage based SOC:\r\n");
+          activeSerial->printf("[25] Setpoint1 (mV):        %4i\r\n",settings.socvolt[0]);
+          activeSerial->printf("[26] SOC @ Setpoint1 (%%):   %4i\r\n",settings.socvolt[1]);
+          activeSerial->printf("[27] Setpoint2 (mV):        %4i\r\n",settings.socvolt[2]);
+          activeSerial->printf("[28] SOC @ Setpoint2 (%%):   %4i\r\n",settings.socvolt[3]);
+          activeSerial->printf("[29] Storage Setpoint (mV): %4i\r\n",settings.StoreVsetpoint);
+          activeSerial->printf("\r\n");
+          activeSerial->printf("Temperature based SOC Adjustment:\r\n");
           for (byte i = 0; i < 5; i++){
             byte y = i*2;
-            SERIALCONSOLE.printf("[%i] T%i(°C): %3i\r\n",30+y,i+1,settings.Temp_CAP_Map[0][i]/10);
-            SERIALCONSOLE.printf("[%i] C%i (%%): %3i\r\n",31+y,i+1,settings.Temp_CAP_Map[1][i]);
+            activeSerial->printf("[%i] T%i(°C): %3i\r\n",30+y,i+1,settings.Temp_CAP_Map[0][i]/10);
+            activeSerial->printf("[%i] C%i (%%): %3i\r\n",31+y,i+1,settings.Temp_CAP_Map[1][i]);
           }
-          SERIALCONSOLE.printf("\r\n");                    
-          SERIALCONSOLE.printf("[q] Quit\r\n");          
+          activeSerial->printf("\r\n");                    
+          activeSerial->printf("[q] Quit\r\n");          
       }
     break; 
     case Menu_CurSen:
@@ -1535,37 +1534,37 @@ void Menu(){
         case 100: debug_Cur = !debug_Cur; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.printf("Current Sensor\r\n");
-          SERIALCONSOLE.printf("--------------------\r\n");
-          SERIALCONSOLE.printf("[1] Invert Current:     %i\r\n",settings.CurSenInvert);
-          SERIALCONSOLE.printf("[2] Voltage based SOC:  %i\r\n",settings.voltsoc);
-          SERIALCONSOLE.printf("[3] Current Multiplier: %i\r\n",settings.CurSenMultiplier);
-          SERIALCONSOLE.printf("[4] Sensor Type: ");  
+          activeSerial->printf("Current Sensor\r\n");
+          activeSerial->printf("--------------------\r\n");
+          activeSerial->printf("[1] Invert Current:     %i\r\n",settings.CurSenInvert);
+          activeSerial->printf("[2] Voltage based SOC:  %i\r\n",settings.voltsoc);
+          activeSerial->printf("[3] Current Multiplier: %i\r\n",settings.CurSenMultiplier);
+          activeSerial->printf("[4] Sensor Type: ");  
           switch (settings.CurSenType) {
             case Sen_Canbus:
-              SERIALCONSOLE.printf(" Canbus Current Sensor\r\n");
+              activeSerial->printf(" Canbus Current Sensor\r\n");
             break;
             case Sen_AnalogueSing:
-              SERIALCONSOLE.printf(" Analogue Single\r\n");
-              SERIALCONSOLE.printf(" Enter value below without decimal point. E.g. 1250 for 12.50mV/A\r\n");
-              SERIALCONSOLE.printf("[7] Analog Sensor 1 (low) mV/A:    %5.2f\r\n",float(settings.analogueSen1_convlow) / 100);
-              SERIALCONSOLE.printf("[8] Current Sensor Deadband in mV: %5i\r\n",settings.analogueSen_CurDead); 
-              SERIALCONSOLE.printf("[9] Calibrate\r\n");
+              activeSerial->printf(" Analogue Single\r\n");
+              activeSerial->printf(" Enter value below without decimal point. E.g. 1250 for 12.50mV/A\r\n");
+              activeSerial->printf("[7] Analog Sensor 1 (low) mV/A:    %5.2f\r\n",float(settings.analogueSen1_convlow) / 100);
+              activeSerial->printf("[8] Current Sensor Deadband in mV: %5i\r\n",settings.analogueSen_CurDead); 
+              activeSerial->printf("[9] Calibrate\r\n");
             break;
             case Sen_AnalogueDual:
-              SERIALCONSOLE.printf(" Analogue Dual\r\n");
-              SERIALCONSOLE.printf(" Enter values below without decimal point. E.g. 1250 for 12.50mV/A\r\n");
-              SERIALCONSOLE.printf("[5] Analog Sensor 1 (low) mV/A:      %5.2f\r\n",float(settings.analogueSen1_convlow) / 100);
-              SERIALCONSOLE.printf("[6] Analog Sensor 2 (high) mV/A:     %5.2f\r\n",float(settings.analogueSen2_convhigh) / 100);  
-              SERIALCONSOLE.printf("[7] Current Sensor switch over in A: %5i\r\n",settings.analogueSen_ChangeCur / 1000);                          
-              SERIALCONSOLE.printf("[8] Current Sensor Deadband in mV:   %5i\r\n",settings.analogueSen_CurDead);  
-              SERIALCONSOLE.printf("[9] Calibrate\r\n");
+              activeSerial->printf(" Analogue Dual\r\n");
+              activeSerial->printf(" Enter values below without decimal point. E.g. 1250 for 12.50mV/A\r\n");
+              activeSerial->printf("[5] Analog Sensor 1 (low) mV/A:      %5.2f\r\n",float(settings.analogueSen1_convlow) / 100);
+              activeSerial->printf("[6] Analog Sensor 2 (high) mV/A:     %5.2f\r\n",float(settings.analogueSen2_convhigh) / 100);  
+              activeSerial->printf("[7] Current Sensor switch over in A: %5i\r\n",settings.analogueSen_ChangeCur / 1000);                          
+              activeSerial->printf("[8] Current Sensor Deadband in mV:   %5i\r\n",settings.analogueSen_CurDead);  
+              activeSerial->printf("[9] Calibrate\r\n");
             break;             
-            default: SERIALCONSOLE.printf("Undefined\r\n");
+            default: activeSerial->printf("Undefined\r\n");
           }
-          SERIALCONSOLE.printf("[d] Debug\r\n");    
-          SERIALCONSOLE.printf("\r\n");
-          SERIALCONSOLE.printf("[q] Quit\r\n");         
+          activeSerial->printf("[d] Debug\r\n");    
+          activeSerial->printf("\r\n");
+          activeSerial->printf("[q] Quit\r\n");         
       }
     break;  
     case Menu_Charger:
@@ -1589,31 +1588,31 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.printf("Charger\r\n");
-          SERIALCONSOLE.printf("--------------------\r\n");
-          SERIALCONSOLE.printf("[1] Charge Hysteresis (mV):                %4i\r\n",settings.ChargeHys);
+          activeSerial->printf("Charger\r\n");
+          activeSerial->printf("--------------------\r\n");
+          activeSerial->printf("[1] Charge Hysteresis (mV):                %4i\r\n",settings.ChargeHys);
           if (settings.ChargerType > 0){
-            SERIALCONSOLE.printf("[2] Max Charge Current per Charger (A):    %4i\r\n",settings.ChargerChargeCurrentMax / 10);
-            SERIALCONSOLE.printf("[3] Pack End of Charge Current in (A):     %4i\r\n",settings.ChargeCurrentEnd / 10);
+            activeSerial->printf("[2] Max Charge Current per Charger (A):    %4i\r\n",settings.ChargerChargeCurrentMax / 10);
+            activeSerial->printf("[3] Pack End of Charge Current in (A):     %4i\r\n",settings.ChargeCurrentEnd / 10);
           }
-          SERIALCONSOLE.printf("[4] Charger Type:                 ");
+          activeSerial->printf("[4] Charger Type:                 ");
           switch (settings.ChargerType){
-            case 0: SERIALCONSOLE.printf("%13s\r\n","undefined"); break;
-            case 1: SERIALCONSOLE.printf("%13s\r\n","Brusa NLG5xx");  break;
-            case 2: SERIALCONSOLE.printf("%13s\r\n","Volt Charger");  break;
-            case 3: SERIALCONSOLE.printf("%13s\r\n","Eltek Charger"); break;
-            case 4: SERIALCONSOLE.printf("%13s\r\n","Elcon Charger"); break;
-            case 5: SERIALCONSOLE.printf("%13s\r\n","Victron/SMA");   break;
-            case 6: SERIALCONSOLE.printf("%13s\r\n","Coda"); break;
+            case 0: activeSerial->printf("%13s\r\n","undefined"); break;
+            case 1: activeSerial->printf("%13s\r\n","Brusa NLG5xx");  break;
+            case 2: activeSerial->printf("%13s\r\n","Volt Charger");  break;
+            case 3: activeSerial->printf("%13s\r\n","Eltek Charger"); break;
+            case 4: activeSerial->printf("%13s\r\n","Elcon Charger"); break;
+            case 5: activeSerial->printf("%13s\r\n","Victron/SMA");   break;
+            case 6: activeSerial->printf("%13s\r\n","Coda"); break;
           }        
-          SERIALCONSOLE.printf("[5] Charger HV Connection: ");
+          activeSerial->printf("[5] Charger HV Connection: ");
           switch (settings.ChargerDirect){
-            case 0: SERIALCONSOLE.printf("%20s\r\n","Behind Contactors"); break;
-            case 1: SERIALCONSOLE.printf("%20s\r\n","Direct to Battery HV"); break;
+            case 0: activeSerial->printf("%20s\r\n","Behind Contactors"); break;
+            case 1: activeSerial->printf("%20s\r\n","Direct to Battery HV"); break;
           }       
-          SERIALCONSOLE.printf("[6] Number of Chargers in Parallel:        %4i\r\n",settings.nChargers);
-          SERIALCONSOLE.printf("\r\n");
-          SERIALCONSOLE.printf("[q] Quit\r\n"); 
+          activeSerial->printf("[6] Number of Chargers in Parallel:        %4i\r\n",settings.nChargers);
+          activeSerial->printf("\r\n");
+          activeSerial->printf("[q] Quit\r\n"); 
       }
     break; 
     case Menu_MC:
@@ -1626,16 +1625,16 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
         Serial_clear();
-        SERIALCONSOLE.printf("Motor Controller\r\n");
-        SERIALCONSOLE.printf("--------------------\r\n");
-        SERIALCONSOLE.printf("[1] Controller Type: ");
+        activeSerial->printf("Motor Controller\r\n");
+        activeSerial->printf("--------------------\r\n");
+        activeSerial->printf("[1] Controller Type: ");
         switch (settings.mctype){
-          case 0: SERIALCONSOLE.printf("not configured\r\n"); break;
-          case 1: SERIALCONSOLE.printf("Curtis\r\n”"); break;
-          default: SERIALCONSOLE.printf("undefined\r\n");
+          case 0: activeSerial->printf("not configured\r\n"); break;
+          case 1: activeSerial->printf("Curtis\r\n”"); break;
+          default: activeSerial->printf("undefined\r\n");
         }
-        SERIALCONSOLE.printf("\r\n");
-        SERIALCONSOLE.printf("[q] Quit\r\n"); 
+        activeSerial->printf("\r\n");
+        activeSerial->printf("[q] Quit\r\n"); 
       }
     break;
     case Menu_Outputs:
@@ -1669,32 +1668,32 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.printf("Outputs\r\n");
-          SERIALCONSOLE.printf("--------------------\r\n");
-          SERIALCONSOLE.printf("12V Outputs:\r\n");
+          activeSerial->printf("Outputs\r\n");
+          activeSerial->printf("--------------------\r\n");
+          activeSerial->printf("12V Outputs:\r\n");
           for (byte i = 1; i < 5; i++){ // [ToDo] use array size
-            SERIALCONSOLE.printf("[%i] Out%i: %s\r\n",i,i,Out_Functions[settings.Out_Map[0][i]].c_str());                    
+            activeSerial->printf("[%i] Out%i: %s\r\n",i,i,Out_Functions[settings.Out_Map[0][i]].c_str());                    
           }
-          SERIALCONSOLE.printf("\r\n");
-          SERIALCONSOLE.printf("PWM/GND Outputs:\r\n");
+          activeSerial->printf("\r\n");
+          activeSerial->printf("PWM/GND Outputs:\r\n");
           for (byte i = 5; i < 9; i++){ // [ToDo] use array size
             byte pos = 2*i-5;
-            SERIALCONSOLE.printf("[%i] %sOut%i:             %16s\r\n",pos,pos<10?" ":"",i,Out_Functions[settings.Out_Map[0][i]].c_str());   
+            activeSerial->printf("[%i] %sOut%i:             %16s\r\n",pos,pos<10?" ":"",i,Out_Functions[settings.Out_Map[0][i]].c_str());   
             pos = 2*i-4;
-            SERIALCONSOLE.printf("[%i] %sOut%i PWM [0-255]: %13s%3i\r\n",pos,pos<10?" ":"",i,"",settings.Out_Map[1][i]);   //%13s just for alignment, whitespaces
+            activeSerial->printf("[%i] %sOut%i PWM [0-255]: %13s%3i\r\n",pos,pos<10?" ":"",i,"",settings.Out_Map[1][i]);   //%13s just for alignment, whitespaces
           }      
-          SERIALCONSOLE.printf("\r\n");
-          SERIALCONSOLE.printf("Additional Settings:\r\n");
-          SERIALCONSOLE.printf("[20] Precharge Timer in ms:          %4i\r\n",settings.PreTime);
-          SERIALCONSOLE.printf("[21] Precharge finish Current in mA: %4i\r\n",settings.PreCurrent);
-          SERIALCONSOLE.printf("[22] PWM Gauge low [0-255]:          %4i\r\n",settings.GaugeLow);
-          SERIALCONSOLE.printf("[23] PWM Gauge high [0-255]:         %4i\r\n",settings.GaugeHigh);
-          SERIALCONSOLE.printf("[24] Gauge Test [0-255] for 30s:     %4i\r\n",debug_Gauge_val);
-          SERIALCONSOLE.printf("[d]  Debug Output ");         
-          if(debug_Output){ SERIALCONSOLE.printf("ON\r\n"); } 
-          else {SERIALCONSOLE.printf("OFF\r\n");}
-          SERIALCONSOLE.printf("\r\n");
-          SERIALCONSOLE.printf("[q] Quit\r\n");
+          activeSerial->printf("\r\n");
+          activeSerial->printf("Additional Settings:\r\n");
+          activeSerial->printf("[20] Precharge Timer in ms:          %4i\r\n",settings.PreTime);
+          activeSerial->printf("[21] Precharge finish Current in mA: %4i\r\n",settings.PreCurrent);
+          activeSerial->printf("[22] PWM Gauge low [0-255]:          %4i\r\n",settings.GaugeLow);
+          activeSerial->printf("[23] PWM Gauge high [0-255]:         %4i\r\n",settings.GaugeHigh);
+          activeSerial->printf("[24] Gauge Test [0-255] for 30s:     %4i\r\n",debug_Gauge_val);
+          activeSerial->printf("[d]  Debug Output ");         
+          if(debug_Output){ activeSerial->printf("ON\r\n"); } 
+          else {activeSerial->printf("OFF\r\n");}
+          activeSerial->printf("\r\n");
+          activeSerial->printf("[q] Quit\r\n");
       }
     break; 
     case Menu_Alarms:
@@ -1703,11 +1702,11 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.printf("Alarms\r\n");
-          SERIALCONSOLE.printf("--------------------\r\n");
-          SERIALCONSOLE.printf("[1] Error Delay (ms):             %5i\r\n",settings.error_delay);
-          SERIALCONSOLE.printf("\r\n");        
-          SERIALCONSOLE.printf("[q] Quit\r\n");          
+          activeSerial->printf("Alarms\r\n");
+          activeSerial->printf("--------------------\r\n");
+          activeSerial->printf("[1] Error Delay (ms):             %5i\r\n",settings.error_delay);
+          activeSerial->printf("\r\n");        
+          activeSerial->printf("[q] Quit\r\n");          
       }
     break;   
     case Menu_IgnVal:
@@ -1725,14 +1724,14 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.printf("Ignore Values\r\n");
-          SERIALCONSOLE.printf("--------------------\r\n");
-          SERIALCONSOLE.printf("[1] Use Temp. Sensor:       ");
-          if (!settings.useTempSensor){SERIALCONSOLE.printf("both\r\n");}
-          else{SERIALCONSOLE.printf("%4i\r\n",settings.useTempSensor);}
-          SERIALCONSOLE.printf("[2] Ignore Cells under mV: %4i\r\n",settings.IgnoreVolt);
-          SERIALCONSOLE.printf("\r\n"); 
-          SERIALCONSOLE.printf("[q] Quit\r\n"); 
+          activeSerial->printf("Ignore Values\r\n");
+          activeSerial->printf("--------------------\r\n");
+          activeSerial->printf("[1] Use Temp. Sensor:       ");
+          if (!settings.useTempSensor){activeSerial->printf("both\r\n");}
+          else{activeSerial->printf("%4i\r\n",settings.useTempSensor);}
+          activeSerial->printf("[2] Ignore Cells under mV: %4i\r\n",settings.IgnoreVolt);
+          activeSerial->printf("\r\n"); 
+          activeSerial->printf("[q] Quit\r\n"); 
       }
     break;  
     case Menu_CAN:
@@ -1758,39 +1757,39 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.printf("CAN-Bus settings\r\n");
-          SERIALCONSOLE.printf("--------------------\r\n");
-          SERIALCONSOLE.printf("[1] Can1 Baudrate in kbps: %i\r\n",settings.CAN1_Speed / 1000);
-          SERIALCONSOLE.printf("[2] Debug CAN1: %s\r\n",debug_CAN1?"ON":"OFF");
-          SERIALCONSOLE.printf("[3] Can2 Baudrate in kbps: %i\r\n",settings.CAN2_Speed / 1000);
-          SERIALCONSOLE.printf("[4] Debug CAN2: %s\r\n",debug_CAN2?"ON":"OFF");
-          SERIALCONSOLE.printf("\r\n");
-          SERIALCONSOLE.printf("Functions:\r\n");
+          activeSerial->printf("CAN-Bus settings\r\n");
+          activeSerial->printf("--------------------\r\n");
+          activeSerial->printf("[1] Can1 Baudrate in kbps: %i\r\n",settings.CAN1_Speed / 1000);
+          activeSerial->printf("[2] Debug CAN1: %s\r\n",debug_CAN1?"ON":"OFF");
+          activeSerial->printf("[3] Can2 Baudrate in kbps: %i\r\n",settings.CAN2_Speed / 1000);
+          activeSerial->printf("[4] Debug CAN2: %s\r\n",debug_CAN2?"ON":"OFF");
+          activeSerial->printf("\r\n");
+          activeSerial->printf("Functions:\r\n");
           for (byte i = 0; i < CAN_MAP_MAX; i++){
             //byte pos = (i+5)*2-5;
             byte pos = i+5;
-            SERIALCONSOLE.printf("[%i] %s",pos,pos<10?" ":"");
+            activeSerial->printf("[%i] %s",pos,pos<10?" ":"");
             switch (i){
-              case 0: SERIALCONSOLE.printf("BMC Std:          "); break;
-              case 1: SERIALCONSOLE.printf("BMC HV:           "); break;
-              case 2: SERIALCONSOLE.printf("BMS:              "); break;
-              case 3: SERIALCONSOLE.printf("Charger:          "); break;
-              case 4: SERIALCONSOLE.printf("Current Sensor:   "); break;
-              case 5: SERIALCONSOLE.printf("Motor Controller: "); break;
+              case 0: activeSerial->printf("BMC Std:          "); break;
+              case 1: activeSerial->printf("BMC HV:           "); break;
+              case 2: activeSerial->printf("BMS:              "); break;
+              case 3: activeSerial->printf("Charger:          "); break;
+              case 4: activeSerial->printf("Current Sensor:   "); break;
+              case 5: activeSerial->printf("Motor Controller: "); break;
             }
             switch (settings.CAN_Map[0][i]){
-              case 0: SERIALCONSOLE.printf("%11s\r\n","undefined"); break;
-              case 1: SERIALCONSOLE.printf("%11s\r\n","CAN1"); break;
-              case 2: SERIALCONSOLE.printf("%11s\r\n","CAN2"); break;
-              case 3: SERIALCONSOLE.printf("%11s\r\n","CAN1 & CAN2"); break;
+              case 0: activeSerial->printf("%11s\r\n","undefined"); break;
+              case 1: activeSerial->printf("%11s\r\n","CAN1"); break;
+              case 2: activeSerial->printf("%11s\r\n","CAN2"); break;
+              case 3: activeSerial->printf("%11s\r\n","CAN1 & CAN2"); break;
             }
             if (i < 3){
               pos = (i+5)*2-4;
-              //SERIALCONSOLE.printf("[%i] %sInterval:         %9ims\r\n",pos,pos<10?" ":"",settings.CAN_Map[1][i]);
+              //activeSerial->printf("[%i] %sInterval:         %9ims\r\n",pos,pos<10?" ":"",settings.CAN_Map[1][i]);
             }
           }
-          SERIALCONSOLE.printf("\r\n");
-          SERIALCONSOLE.printf("[q] Quit\r\n");
+          activeSerial->printf("\r\n");
+          activeSerial->printf("[q] Quit\r\n");
       }
     break;     
     case Menu_Misc:
@@ -1800,18 +1799,18 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.printf("Experimental\r\n");
-          SERIALCONSOLE.printf("--------------------\r\n");
-          SERIALCONSOLE.printf("[1] Second Serial Port: ");
+          activeSerial->printf("Experimental\r\n");
+          activeSerial->printf("--------------------\r\n");
+          activeSerial->printf("[1] Second Serial Port: ");
           switch (settings.secondarySerial){
-            case 0: SERIALCONSOLE.printf("%s\r\n","Serial Display"); break;
-            case 1: SERIALCONSOLE.printf("%s\r\n","undefined"); break;
-            case 2: SERIALCONSOLE.printf("%s\r\n","Bluetooth App (not used)"); break;
+            case 0: activeSerial->printf("%s\r\n","Serial Display"); break;
+            case 1: activeSerial->printf("%s\r\n","undefined"); break;
+            case 2: activeSerial->printf("%s\r\n","Bluetooth App (not used)"); break;
           
           }
-          SERIALCONSOLE.printf("[2] Battery ID (HEX):   %#x\r\n",settings.batteryID);
-          SERIALCONSOLE.printf("\r\n");
-          SERIALCONSOLE.printf("[q] Quit\r\n");
+          activeSerial->printf("[2] Battery ID (HEX):   %#x\r\n",settings.batteryID);
+          activeSerial->printf("\r\n");
+          activeSerial->printf("[q] Quit\r\n");
       }
     break; 
     case Menu_Debug:
@@ -1826,17 +1825,17 @@ void Menu(){
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
-          SERIALCONSOLE.printf("Debug\r\n");
-          SERIALCONSOLE.printf("--------------------\r\n");
-          SERIALCONSOLE.printf("[1] CAN1\r\n");
-          SERIALCONSOLE.printf("[2] CAN2\r\n");
-          SERIALCONSOLE.printf("[3] Current\r\n");
-          SERIALCONSOLE.printf("[4] Output Check: %s\r\n",debug_Output?"ON":"OFF");
-          SERIALCONSOLE.printf("[5] Input Check\r\n");
-          SERIALCONSOLE.printf("[6] ---\r\n");
-          SERIALCONSOLE.printf("[7] CSV Output\r\n");
-          SERIALCONSOLE.printf("\r\n");  
-          SERIALCONSOLE.printf("[q] Quit\r\n");  
+          activeSerial->printf("Debug\r\n");
+          activeSerial->printf("--------------------\r\n");
+          activeSerial->printf("[1] CAN1\r\n");
+          activeSerial->printf("[2] CAN2\r\n");
+          activeSerial->printf("[3] Current\r\n");
+          activeSerial->printf("[4] Output Check: %s\r\n",debug_Output?"ON":"OFF");
+          activeSerial->printf("[5] Input Check\r\n");
+          activeSerial->printf("[6] ---\r\n");
+          activeSerial->printf("[7] CSV Output\r\n");
+          activeSerial->printf("\r\n");  
+          activeSerial->printf("[q] Quit\r\n");  
       }
     break;          
   }
@@ -1844,14 +1843,14 @@ void Menu(){
 
 void Serial_clear(){
   // Form feed
-  SERIALCONSOLE.write(12);
+  activeSerial->write(12);
   
   // ESC + Clear
-  //SERIALCONSOLE.write(27);
-  //SERIALCONSOLE.printf("[2J");
+  //activeSerial->write(27);
+  //activeSerial->printf("[2J");
   
   // bunch of new lines
-  //for (byte i = 0; i < 40; i++){SERIALCONSOLE.printf("\r\n");}
+  //for (byte i = 0; i < 40; i++){activeSerial->printf("\r\n");}
 }
 
 int16_t pgnFromCANId(int16_t canId){ //Parameter Group Number
@@ -1937,16 +1936,16 @@ void DischargeCurrentLimit(){
 
 void Input_Debug(){
   Menu();
-  SERIALCONSOLE.printf("\r\nInput: ");
-  if (digitalRead(IN1_Key) == HIGH){SERIALCONSOLE.printf("1 ON  ");}
-  else {SERIALCONSOLE.printf("1 OFF ");}
-  if (digitalRead(IN2_Gen) == HIGH){ SERIALCONSOLE.printf("2 ON  ");}
-  else {SERIALCONSOLE.printf("2 OFF ");}
-  if (digitalRead(IN3_AC) == HIGH){SERIALCONSOLE.printf("3 ON  ");}
-  else {SERIALCONSOLE.printf("3 OFF ");}
-  if (digitalRead(IN4) == HIGH){SERIALCONSOLE.printf("4 ON  ");}
-  else {SERIALCONSOLE.printf("4 OFF ");}
-  SERIALCONSOLE.printf("\r\n");
+  activeSerial->printf("\r\nInput: ");
+  if (digitalRead(IN1_Key) == HIGH){activeSerial->printf("1 ON  ");}
+  else {activeSerial->printf("1 OFF ");}
+  if (digitalRead(IN2_Gen) == HIGH){ activeSerial->printf("2 ON  ");}
+  else {activeSerial->printf("2 OFF ");}
+  if (digitalRead(IN3_AC) == HIGH){activeSerial->printf("3 ON  ");}
+  else {activeSerial->printf("3 OFF ");}
+  if (digitalRead(IN4) == HIGH){activeSerial->printf("4 ON  ");}
+  else {activeSerial->printf("4 OFF ");}
+  activeSerial->printf("\r\n");
 }
 
 void Output_debug(){
@@ -2042,10 +2041,10 @@ void Dash_update(){
 }
 
 void Nextion_send(String var, String val){
-  DisplaySerial.printf("%s%s",var.c_str(),val.c_str());
-  DisplaySerial.write(0xff);
-  DisplaySerial.write(0xff);
-  DisplaySerial.write(0xff);  
+  Serial_Display.printf("%s%s",var.c_str(),val.c_str());
+  Serial_Display.write(0xff);
+  Serial_Display.write(0xff);
+  Serial_Display.write(0xff);  
 }
 
 void can1_start(){

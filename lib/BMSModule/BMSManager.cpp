@@ -227,20 +227,20 @@ void BMSManager::readModulesValues(CAN_message_t &msg){
 void BMSManager::printPackDetails(){
     for (byte moduleNr = 0; moduleNr < MAX_MODULE_ADDR; moduleNr++){
         if(modules[moduleNr].isExisting()){
-            SERIALCONSOLE.printf("Module #%i%s %imV",moduleNr,moduleNr<10?" ":"",modules[moduleNr].getModuleVoltage());
+            activeSerial->printf("Module #%i%s %imV",moduleNr,moduleNr<10?" ":"",modules[moduleNr].getModuleVoltage());
             
             for (byte cellNr = 0; cellNr < MAX_CELL_No; cellNr++){
                 uint16_t tmpV = modules[moduleNr].getCellVoltage(cellNr);
                 if(tmpV){
-                    SERIALCONSOLE.printf(" C%i: %4imV%s",cellNr+1,tmpV,balancingCells[moduleNr] & (1 << cellNr)?"*":" ");
+                    activeSerial->printf(" C%i: %4imV%s",cellNr+1,tmpV,balancingCells[moduleNr] & (1 << cellNr)?"*":" ");
                 }
             }
             for (byte senNr = 0; senNr < MAX_Temp_Sens; senNr++){
                 if (modules[moduleNr].getTemperature(senNr) > -999){
-                    SERIALCONSOLE.printf(" T%i: %.1fC",senNr+1,float(modules[moduleNr].getTemperature(senNr)) / 10);
+                    activeSerial->printf(" T%i: %.1fC",senNr+1,float(modules[moduleNr].getTemperature(senNr)) / 10);
                 }
             }
-            SERIALCONSOLE.printf("\r\n");
+            activeSerial->printf("\r\n");
         }
     }
     
@@ -468,7 +468,7 @@ CAN_Struct BMSManager::Balancing(uint16_t BalHys, bool active){
 
     // check if all messages for module values have been received. If not, do not balance!
     if(active && moduleReadCnt != getNumModules()){
-        SERIALCONSOLE.printf(" not all messages recieved! %i/%i",moduleReadCnt,numFoundModules);
+        activeSerial->printf(" not all messages recieved! %i/%i",moduleReadCnt,numFoundModules);
         return BalanceMatrix;
     }
 

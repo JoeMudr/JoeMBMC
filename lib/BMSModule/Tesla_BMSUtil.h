@@ -24,10 +24,10 @@ public:
         uint8_t orig = data[0];
         uint8_t addrByte = data[0];
         if (isWrite) addrByte |= 1;
-        SERIALBMS.write(addrByte);
-        SERIALBMS.write(&data[1], dataLen - 1);  //assumes that there are at least 2 bytes sent every time. There should be, addr and cmd at the least.
+        Serial_BMS.write(addrByte);
+        Serial_BMS.write(&data[1], dataLen - 1);  //assumes that there are at least 2 bytes sent every time. There should be, addr and cmd at the least.
         data[0] = addrByte;
-        if (isWrite) SERIALBMS.write(genCRC(data, dataLen));        
+        if (isWrite) Serial_BMS.write(genCRC(data, dataLen));        
         data[0] = orig;
     }
 
@@ -35,11 +35,11 @@ public:
     { 
         int numBytes = 0; 
 
-        while (SERIALBMS.available() && numBytes < maxLen){
-            data[numBytes] = SERIALBMS.read();
+        while (Serial_BMS.available() && numBytes < maxLen){
+            data[numBytes] = Serial_BMS.read();
             numBytes++;
         }
-        if (maxLen == numBytes){while (SERIALBMS.available()) SERIALBMS.read();}
+        if (maxLen == numBytes){while (Serial_BMS.available()) Serial_BMS.read();}
         return numBytes;
     }
     

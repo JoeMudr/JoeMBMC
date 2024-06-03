@@ -2,15 +2,20 @@
 #include <Arduino.h>
 
 // Set to the proper port for your USB connection - SerialUSB on Due (Native) or Serial for Due (Programming) or Teensy
-#define SERIALCONSOLE Serial
+#define Serial_USB Serial
 
 // Define this to be the serial port the Tesla BMS modules are connected to.
 // On the Due you need to use a USART port (Serial1, Serial2, Serial3) and update the call to serialSpecialInit if not Serial1
 // Serial3 for teensy 3.2; Serial 2 for Teensy 4.x
-#define SERIALBMS  Serial2
+#define Serial_BMS  Serial2
 
-// Secondary Serial
-#define DisplaySerial Serial4
+// Serial port for BlueTooth module
+#define Serial_BT   Serial6
+
+// Serial port for Display
+#define Serial_Display Serial4
+
+Stream* activeSerial = &Serial_USB;
 
 // Tesla BMS_Module Comms
 #define REG_DEV_STATUS      0
