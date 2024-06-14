@@ -2,10 +2,6 @@
 	"folders": [
 		{
 			"path": "."
-		},
-		{
-			"name": " atmega328_test",
-			"path": "../ atmega328_test"
 		}
 	],
 	"settings": {
