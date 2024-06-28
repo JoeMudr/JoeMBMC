@@ -19,14 +19,14 @@
 */
 
 #include <JoeMBMC.h>
-#include <BMSManager.h>
 #include <Arduino.h>
-#include <config.h>
 #include <EEPROM.h>
 #include <ADC.h>          //https://github.com/pedvide/ADC
-#include <FlexCAN_T4.h>   //https://github.com/tonton81/FlexCAN_T4
+//#include <FlexCAN_T4.h>   //https://github.com/tonton81/FlexCAN_T4
 #include <Filters.h>      //https://github.com/JonHub/Filters
 #include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
+
+Stream* activeSerial = &Serial_USB;
 
 /////Version Identifier/////////
 uint32_t firmver = 240603;
@@ -791,6 +791,7 @@ void set_BMC_Status(byte status){
     case Stat_Charged:
       set_OUT_States(); // all off
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
+      if (digitalRead(IN1_Key) == HIGH){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);}
       Balancing(true);
       chargecurrentlast = 0;
       Warn_Out_handle();
@@ -803,7 +804,8 @@ void set_BMC_Status(byte status){
         set_OUT_States(Out_Error);
         set_OUT_States(Out_Err_Warn);
         if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
-        if (digitalRead(IN1_Key) == HIGH && ChargeActive()){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);}
+        if (ChargeActive()){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);}
+        if (settings.ESSmode){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);}
         Balancing(false);
         discurrent = 0;
         chargecurrent = 0;
@@ -2119,8 +2121,8 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   MSG.id  = 0x356;
   MSG.buf[0] = lowByte(uint16_t(round(double(bms.getPackVoltage()) / 10)));
   MSG.buf[1] = highByte(uint16_t(round(double(bms.getPackVoltage()) / 10)));
-  MSG.buf[2] = lowByte(int32_t(round(double(currentact) / 100))); // [ToDo] values > ~6500A will overflow!
-  MSG.buf[3] = highByte(int32_t(round(double(currentact) / 100)));
+  MSG.buf[2] = lowByte(int16_t(round(double(currentact) / 100))); // [ToDo] values > ~6500A will overflow!
+  MSG.buf[3] = highByte(int16_t(round(double(currentact) / 100)));
   MSG.buf[4] = lowByte(bms.getAvgTemperature());
   MSG.buf[5] = highByte(bms.getAvgTemperature());
   MSG.buf[6] = 0;
@@ -2225,11 +2227,11 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   if(CAN_Nr & 2){can2.write(MSG);}
 
   delay(2);
-  MSG.id  = 0x379; // installed capacity, non standard
+  MSG.id  = 0x379; // non standard, installed capacity, Power in kW
   MSG.buf[0] = lowByte(uint16_t(settings.Pstrings * settings.CAP));
   MSG.buf[1] = highByte(uint16_t(settings.Pstrings * settings.CAP));
-  MSG.buf[2] = 0x00;
-  MSG.buf[3] = 0x00;
+  MSG.buf[2] = lowByte((int16_t((double(currentact)/1000)*(double(bms.getPackVoltage())/1000)/10)));
+  MSG.buf[3] = highByte((int16_t((double(currentact)/1000)*(double(bms.getPackVoltage())/1000)/10)));
   MSG.buf[4] = 0x00;
   MSG.buf[5] = 0x00;
   MSG.buf[6] = 0x00;
