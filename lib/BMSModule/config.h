@@ -15,7 +15,10 @@
 // Serial port for Display
 #define Serial_Display Serial4
 
-Stream* activeSerial = &Serial_USB;
+#ifndef ACTIVESERIAL
+#define ACTIVESERIAL
+extern Stream* activeSerial;
+#endif
 
 // Tesla BMS_Module Comms
 #define REG_DEV_STATUS      0

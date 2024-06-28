@@ -8,9 +8,7 @@
 */
 
 #pragma once
-#include "config.h"
 #include "BMSModule.h"
-#include <FlexCAN_T4.h>
 #include "CAN_Struct.h"
 #include "CRC8.h"
 

@@ -1,6 +1,6 @@
+#pragma once
 #include <Arduino.h> 
-#include <FlexCAN_T4.h>
-#include <config.h>
+#include <BMSManager.h>
 
 void Reset_Cause(uint32_t resetStatusReg);
 void BMSInit();

@@ -1,4 +1,3 @@
-#include <config.h>
 #include "BMSModule.h"
 #include "Tesla_BMSUtil.h"
 

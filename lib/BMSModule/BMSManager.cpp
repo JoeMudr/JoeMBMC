@@ -1,5 +1,4 @@
 #include "BMSManager.h"
-#include "CAN_Struct.h"
 #include "Tesla_BMSUtil.h"
 
 BMSManager::BMSManager(){
@@ -591,7 +590,8 @@ CAN_Struct BMSManager::VW_Balancing(uint16_t BalHys,bool active){
 CAN_Struct BMSManager::BMW_Balancing(uint16_t BalHys,bool active){
     CAN_Struct BalanceMatrix;
     BalanceMatrix = clearCANStruct();
-    uint8_t balance_Bitmask = 0; //bit 0 - 5 are to activate cell balancing 1-6 etc.
+    //uint8_t balance_Bitmask = 0; //bit 0 - 5 are to activate cell balancing 1-6 etc.
+    return BalanceMatrix;
 }
 
 void BMSManager::Tesla_renumberModulesIDs(){
