@@ -29,7 +29,7 @@
 Stream* activeSerial = &Serial_USB;
 
 /////Version Identifier/////////
-uint32_t firmver = 240603;
+uint32_t firmver = 241006;
 
 BMSManager bms;
 EEPROMSettings settings;
@@ -125,6 +125,9 @@ const int16_t chargerid1 = 0x618; //bulk chargers (brusa)
 const int16_t chargerid2 = 0x638; //finishing charger (brusa)
 uint16_t chargerendbulk = 0; //mV before Charge Voltage to turn off the bulk charger/s
 uint16_t chargerend = 0; //mV before Charge Voltage to turn off the finishing charger/s
+bool v_CAN_Charger_Active = false; // global variable for CAN-Based chargers
+u_int32_t v_CAN_Charger_Active_Timer = 0; // Reset-timer for v_CAN_Charger_Active
+
 
 //variables
 byte storagemode = 0;
@@ -417,7 +420,7 @@ void loop(){
   if (!debug_Output){
     if (settings.ESSmode){BMC_Stat = ESS_CondCheck(BMC_Stat);}
     else {BMC_Stat = Vehicle_CondCheck(BMC_Stat);}
-    set_BMC_Status(BMC_Stat);
+    BMC_Statemachine(BMC_Stat);
     set_OUTs();
   }
 
@@ -638,7 +641,7 @@ bool WarnAlarm_Check(byte Type, byte WarnAlarm){
 
 byte Vehicle_CondCheck(byte tmp_status){ 
   // start with no Errors
-  if(!ChargeActive()){
+  if(!Charge_Active()){
     tmp_status = Stat_Ready;
     // detect KEY ON
     if (digitalRead(IN1_Key)){
@@ -651,7 +654,7 @@ byte Vehicle_CondCheck(byte tmp_status){
   if (WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_VLow)) {tmp_status = Stat_Error;}
 
   //detect AC present & Check charging conditions
-  if (ChargeActive()){
+  if (Charge_Active()){
     //start charging when Voltage is below Charge Voltage - ChargeHyst.
     if (bms.getHighCellVolt() < (settings.ChargeVSetpoint - settings.ChargeHys)){ 
       if (precharged || settings.ChargerDirect){tmp_status = Stat_Charge;}
@@ -724,11 +727,24 @@ byte ESS_CondCheck(byte tmp_status){
 /*
   Detect charging via external inputs like IN3_AC, CAN-bus...
 */
-bool ChargeActive(){
+bool Charge_Active(){
   bool retVal = false;
-  // Add more charge detections like CAN
-  if (digitalRead(IN3_AC) == HIGH){retVal = true;}
+  if (digitalRead(IN3_AC) == HIGH){retVal = true;} // read Input3 for AC presence
+  if (v_CAN_Charger_Active == true) {
+    if(v_CAN_Charger_Active_Timer + 5000 <= millis()){ // Reset CAN_Charger_Active after 5s without CAN message.
+      v_CAN_Charger_Active = false; 
+    } else {
+      retVal = true;
+    }
+  }
   return retVal;
+}
+
+void CAN_Charge_Check(CAN_message_t MSG){
+  if (MSG.id == 0x18ff50e5){ // Elcon / TC Chargers
+    v_CAN_Charger_Active = true;
+    v_CAN_Charger_Active_Timer = millis();
+  }
 }
 
 byte Warn_Out_handle(){
@@ -748,7 +764,7 @@ byte Warn_Out_handle(){
   return 0;
 }
 
-void set_BMC_Status(byte status){
+void BMC_Statemachine(byte status){
   switch (status){
     case Stat_Boot:  //[ToDO] not used. Change to maintenance mode?
       set_OUT_States(); // all off
@@ -804,7 +820,7 @@ void set_BMC_Status(byte status){
         set_OUT_States(Out_Error);
         set_OUT_States(Out_Err_Warn);
         if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
-        if (ChargeActive()){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);}
+        if (Charge_Active()){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);}
         if (settings.ESSmode){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);}
         Balancing(false);
         discurrent = 0;
@@ -912,7 +928,7 @@ void Serial_Print(bool Modules_Print_ON){
   activeSerial->printf("\r\n");
   activeSerial->printf("\r\n");
 
-  activeSerial->printf("IN %d%d%d%d %s %s\r\n",digitalRead(IN1_Key),digitalRead(IN2_Gen),digitalRead(IN3_AC),digitalRead(IN4),ChargeActive()?"| Charger plugged":"",digitalRead(IN1_Key)?"| Key ON":"");
+  activeSerial->printf("IN %d%d%d%d %s %s\r\n",digitalRead(IN1_Key),digitalRead(IN2_Gen),digitalRead(IN3_AC),digitalRead(IN4),Charge_Active()?"| Charger plugged":"",digitalRead(IN1_Key)?"| Key ON":"");
   if(TCU_Pump || TCU_Cool || TCU_Heat || TCU_REL4){
     activeSerial->printf("TCU: %s%s%s%s\r\n",TCU_Pump-1?"Pumping ":"",TCU_Cool-1?"Cooling ":"",TCU_Heat-1?"Heating ":"",TCU_REL4-1?"REL4":"");
   }
@@ -2067,7 +2083,8 @@ void CAN_read(){
     if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 1){bms.readModulesValues(MSG); BMSLastRead = millis();}
     if (settings.CAN_Map[0][CAN_BMC_HV] & 1){CAN_BMC_HV_send(1, MSG);} // Send HV CAN triggered by Inverter
     if (debug_CAN1){CAN_Debug_IN(1, MSG);}
-    if (settings.CAN_Map[0][CAN_BMC_std]) {CAN_TCU_read(MSG);}
+    if (settings.CAN_Map[0][CAN_BMC_std] & 1) {CAN_TCU_read(MSG);}
+    if (settings.CAN_Map[0][CAN_Charger] & 1) {CAN_Charge_Check(MSG);}
   }
   while (can2.read(MSG)){
     if (settings.CurSenType == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 2){CAN_SEN_read(MSG, currentact);}
@@ -2075,12 +2092,12 @@ void CAN_read(){
     if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 2){bms.readModulesValues(MSG); BMSLastRead = millis();}
     if (settings.CAN_Map[0][CAN_BMC_HV] & 2){CAN_BMC_HV_send(2, MSG);} // Send HV CAN triggered by Inverter
     if (debug_CAN2){CAN_Debug_IN(2, MSG);}
-    if (settings.CAN_Map[0][CAN_BMC_std]) {CAN_TCU_read(MSG);}
+    if (settings.CAN_Map[0][CAN_BMC_std] & 2) {CAN_TCU_read(MSG);}
+    if (settings.CAN_Map[0][CAN_Charger] & 2) {CAN_Charge_Check(MSG);}
   }
 }
 
 void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
-  
   if(CAN_BMC_Std_send_Timer + 500 >= millis()){return;} // Timer 1s;
   if(!CAN_Nr){return;} // No CanNr. set.
 
@@ -2227,7 +2244,7 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   if(CAN_Nr & 2){can2.write(MSG);}
 
   delay(2);
-  MSG.id  = 0x379; // non standard, installed capacity, Power in kW
+  MSG.id  = 0x379; // non standard, installed capacity, Power in kW, [ToDo] add Status?
   MSG.buf[0] = lowByte(uint16_t(settings.Pstrings * settings.CAP));
   MSG.buf[1] = highByte(uint16_t(settings.Pstrings * settings.CAP));
   MSG.buf[2] = lowByte((int16_t((double(currentact)/1000)*(double(bms.getPackVoltage())/1000)/10)));
