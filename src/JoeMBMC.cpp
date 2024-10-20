@@ -41,11 +41,11 @@ FilterOnePole lowpassFilter( LOWPASS, filterFrequency );
 //#define doesn't work here because Pins are used in Arrays below.
 const byte IN_ACUR2 = A0;      // analogue current sensor 1
 const byte IN_ACUR1 = A1;      // analogue current sensor 2
-const byte IN_BOD = A10;       // brownout detection on ADC pin
+const byte IN_BOD = A10;       // brownout detection on ADC pin [ToDo]
 const byte IN1_Key = 19;    // input 1 - high active
 const byte IN2_Gen = 18;    // input 2 - high active
 const byte IN3_AC = 20;     // input 3 - high active
-const byte IN4 = 21;        // input 4 - high active
+const byte IN4_HVIL = 21;   // input 4 - high active
 const byte OUT1 = 6;        // output 1 - high active
 const byte OUT2 = 5;        // output 2 - high active
 const byte OUT3 = 4;        // output 3 - high active
@@ -76,7 +76,7 @@ uint16_t pwmfreq = 18000;//pwm frequency
 
 uint16_t chargecurrent = 0;       // in 0,1A
 uint16_t chargecurrentlast = 0;   // in 0,1A
-uint16_t chargecurrentFactor = 0; //in%, correction factor, when using multiple chargers
+uint16_t chargecurrentFactor = 0; // in%, correction factor, when using multiple chargers
 uint16_t discurrent = 0;          // in 0,1A
 
 /*
@@ -103,9 +103,9 @@ uint32_t BMSLastRead = 0; // [ToDo] not used
 uint16_t Sen_AnalogueRawValue;
 int32_t currentact = 0; // mA
 int32_t currentlast = 0; // mA
-int32_t currentavg = 0; // mA
-int32_t currentavg_array[60];
-byte currentavg_counter = 0;
+//int32_t currentavg = 0; // mA
+
+// byte currentavg_counter = 0;
 int32_t RawCur;
 int32_t mampsecond = 0; // Range 0 = full to settings.cap * -1 = empty
 volatile int32_t mampsecondTimer = 0;
@@ -332,7 +332,7 @@ void setup(){
   pinMode(IN1_Key, INPUT);
   pinMode(IN2_Gen, INPUT);
   pinMode(IN3_AC, INPUT);
-  pinMode(IN4, INPUT);
+  pinMode(IN4_HVIL, INPUT);
   pinMode(OUT1, OUTPUT); // 12V output
   pinMode(OUT2, OUTPUT); // 12V output
   pinMode(OUT3, OUTPUT); // 12V output
@@ -718,8 +718,8 @@ byte ESS_CondCheck(byte tmp_status){
 /*
   if (digitalRead(IN1_Key) == HIGH) {}
 */
-  if(currentact > 0){tmp_status = Stat_Charge;}
-  if(currentact < 0){tmp_status = Stat_Discharge;}
+  if(precharged && currentact > 0){tmp_status = Stat_Charge;}
+  if(precharged && currentact < 0){tmp_status = Stat_Discharge;}
 
   if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)) {SOC_charged();}
 
@@ -822,11 +822,10 @@ void BMC_Statemachine(byte status){
     case Stat_Charged:
       set_OUT_States(); // all off
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
-      if (digitalRead(IN1_Key) == HIGH){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);}
+      //if (digitalRead(IN1_Key) == HIGH){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);} //[ToDo] Why?
       Balancing(true);
       chargecurrentlast = 0;
       Warn_Out_handle();
-      //CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
     case Stat_Error:
       if (!error_timer){ error_timer = millis() + settings.error_delay; }//10s delay before turning everything off
@@ -917,16 +916,17 @@ void Serial_Print(bool Modules_Print){
     activeSerial->printf("!!! Internal Error / Series Cells Fault !!!\r\n\n");
   } else { activeSerial->printf("\r\n");}
   
+  activeSerial->printf("Current ");
   if (settings.CurSenType == Sen_AnalogueDual){
     if (Sen_Analogue_active_Nr == 1)
-      { activeSerial->printf("Analogue Low:  "); }
+      { activeSerial->printf("(A Low):  "); }
     else if (Sen_Analogue_active_Nr == 2)
-      { activeSerial->printf("Analogue High: "); }
+      { activeSerial->printf("(A High): "); }
   }
   if (settings.CurSenType == Sen_AnalogueSing)
-    {activeSerial->printf("Analogue Single: ");}
+    {activeSerial->printf("(A Single): ");}
   if (settings.CurSenType == Sen_Canbus)
-    {activeSerial->printf("CANbus: ");}
+    {activeSerial->printf("(CAN): ");}
   activeSerial->printf("%6imA\r\n",currentact);
   activeSerial->printf("SOC:       %3u%%  (%.2fmAh)\r\n",SOC,double(mampsecond) / 3600);
   activeSerial->printf("SOH:       %3u%%  (%u/%uAh)\r\n",SOH_calc(),settings.CAP,settings.designCAP);
@@ -935,17 +935,17 @@ void Serial_Print(bool Modules_Print){
   activeSerial->printf("ETA:       %2ih %2im\r\n",minutes / 60,minutes % 60);
   activeSerial->printf("Warning:   ");
   for (byte i = 0; i < 4; i++){
-    activeSerial->printf("%08i ",ConvertToBin(warning[i])); // [ToDo] in Binary
+    activeSerial->printf("%08i ",ConvertToBin(warning[i]));
   }
   activeSerial->printf("\r\n");
   activeSerial->printf("Error:     ");
   for (byte i = 0; i < 4; i++){
-    activeSerial->printf("%08i ",ConvertToBin(alarm[i])); // [ToDo] in Binary
+    activeSerial->printf("%08i ",ConvertToBin(alarm[i]));
   }
   activeSerial->printf("\r\n");
   activeSerial->printf("\r\n");
 
-  activeSerial->printf("IN %d%d%d%d %s %s\r\n",digitalRead(IN1_Key),digitalRead(IN2_Gen),digitalRead(IN3_AC),digitalRead(IN4),Charge_Active()?"| Charger plugged":"",digitalRead(IN1_Key)?"| Key ON":"");
+  activeSerial->printf("IN %d%d%d%d %s %s\r\n",digitalRead(IN1_Key),digitalRead(IN2_Gen),digitalRead(IN3_AC),digitalRead(IN4_HVIL),Charge_Active()?"| Charger plugged":"",digitalRead(IN1_Key)?"| Key ON":"");
   if(TCU_Pump || TCU_Cool || TCU_Heat || TCU_REL4){
     activeSerial->printf("TCU: %s%s%s%s\r\n",TCU_Pump-1?"Pumping ":"",TCU_Cool-1?"Cooling ":"",TCU_Heat-1?"Heating ":"",TCU_REL4-1?"REL4":"");
   }
@@ -1091,8 +1091,24 @@ void CAN_Debug_IN(byte CanNr, CAN_message_t MSG){
   activeSerial->printf("\r\n");
 }
 
-void Currentavg_Calc(){
-  //[ToDo] überarbeiten! (glätten, reset bei Statuswechsel)
+int32_t Currentavg_Calc(){
+  //[ToDo] überarbeiten! (glätten)
+  static byte BMC_last_Stat = 0;
+  static byte currentavg_counter = 0;
+  static uint32_t looptime = 0;
+  static int32_t retval = 0;
+  int32_t currentavg_array[60];
+
+  // run once per 1s max
+  if (millis() < looptime + 1000) {return retval;}
+
+  // reset on state machine change
+  if (BMC_Stat != BMC_last_Stat) {
+    for (byte i = 0; i < 60; i++){
+      currentavg_array[i] = currentact;
+    }
+  }
+
   currentavg_array[currentavg_counter] = currentact;
   currentavg_counter++;
   if(currentavg_counter > 59){currentavg_counter = 0;}
@@ -1101,7 +1117,11 @@ void Currentavg_Calc(){
   for (byte i=0; i< max_size; i++){
     current_temp += currentavg_array[i];
   }
-  currentavg = current_temp / max_size;
+  retval = current_temp / max_size;
+  looptime = millis();
+  BMC_last_Stat = BMC_Stat;
+
+  return retval;
 }
 
 void Current_debug(){
@@ -1127,6 +1147,7 @@ void Current_debug(){
 
 int32_t ETA(){ // return minutes
   //[ToDo] weiter glätten! mögl. vordef./errechneten Durchschnittswert einbeziehen?
+  int32_t currentavg = Currentavg_Calc();
   if(BMC_Stat == Stat_Charge){
     return labs(mampsecond / 60 / currentavg);
   }else{
@@ -1994,7 +2015,7 @@ void Input_Debug(){
   else {activeSerial->printf("2 OFF ");}
   if (digitalRead(IN3_AC) == HIGH){activeSerial->printf("3 ON  ");}
   else {activeSerial->printf("3 OFF ");}
-  if (digitalRead(IN4) == HIGH){activeSerial->printf("4 ON  ");}
+  if (digitalRead(IN4_HVIL) == HIGH){activeSerial->printf("4 ON  ");}
   else {activeSerial->printf("4 OFF ");}
   activeSerial->printf("\r\n");
 }
@@ -2297,7 +2318,6 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
 void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
   
   if(inMSG.id == 0x4200 && inMSG.buf[0] == 0){ // Broadcast from Inverter asking for System Data
-  //  if(1){
     CAN_message_t MSG;
     MSG.len = 8;
     MSG.flags.extended = true;
@@ -2511,10 +2531,10 @@ void CAN_Charger_Send(byte CAN_Nr){
         MSG.buf[1] = highByte(maxac2 * 10);
         MSG.buf[2] = lowByte(maxac2 * 10);
       }
-      MSG.buf[5] = highByte(chargecurrent);
-      MSG.buf[6] = lowByte(chargecurrent);
       MSG.buf[3] = highByte(uint16_t(round(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerendbulk) / 1000) * 10)));
       MSG.buf[4] = lowByte(uint16_t(round(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerendbulk) / 1000) * 10)));
+      MSG.buf[5] = highByte(chargecurrent);
+      MSG.buf[6] = lowByte(chargecurrent);
       if(CAN_Nr & 1){can1.write(MSG);}
       if(CAN_Nr & 2){can2.write(MSG);}
 

@@ -37,7 +37,7 @@ uint32_t CO_Handle(CAN_message_t MSG);
 void SOC_update();
 void DischargeCurrentLimit();
 void ChargeCurrentLimit();
-void Currentavg_Calc();
+int32_t Currentavg_Calc();
 void WDOG_reset();
 void Menu(String Menu_Option = "");
 void ContCon();
