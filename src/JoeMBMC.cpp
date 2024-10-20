@@ -22,14 +22,13 @@
 #include <Arduino.h>
 #include <EEPROM.h>
 #include <ADC.h>          //https://github.com/pedvide/ADC
-//#include <FlexCAN_T4.h>   //https://github.com/tonton81/FlexCAN_T4
 #include <Filters.h>      //https://github.com/JonHub/Filters
 #include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
 
 Stream* activeSerial = &Serial_USB;
 
 /////Version Identifier/////////
-uint32_t firmver = 241006;
+uint32_t firmver = 241020;
 
 BMSManager bms;
 EEPROMSettings settings;
@@ -40,8 +39,9 @@ FilterOnePole lowpassFilter( LOWPASS, filterFrequency );
 
 //BMC wiring//
 //#define doesn't work here because Pins are used in Arrays below.
-const byte ACUR2 = A0;      // analogue current sensor 1
-const byte ACUR1 = A1;      // analogue current sensor 2
+const byte IN_ACUR2 = A0;      // analogue current sensor 1
+const byte IN_ACUR1 = A1;      // analogue current sensor 2
+const byte IN_BOD = A10;       // brownout detection on ADC pin
 const byte IN1_Key = 19;    // input 1 - high active
 const byte IN2_Gen = 18;    // input 2 - high active
 const byte IN3_AC = 20;     // input 3 - high active
@@ -56,14 +56,14 @@ const byte OUT7 = 10;       // output 7 - Low active / PWM
 const byte OUT8 = 9;        // output 8 - Low active / PWM
 const byte LED = 13;
 
-uint32_t LED_Timer = 0;
+// uint32_t LED_Timer = 0;
 
 byte BMC_Stat = 0;
 
 //Serial Menu
 bool menu_load = 0;
-byte menu_option = 0;
-byte menu_current = 0;
+// byte menu_option = 0;
+// byte menu_current = 0;
 
 //Errors
 uint32_t error_timer = 0;
@@ -71,7 +71,7 @@ uint32_t error_timer = 0;
 byte Settings_unsaved= 0;
 
 //variables for output control
-uint32_t Pretimer;
+// uint32_t Precharge_Timer;
 uint16_t pwmfreq = 18000;//pwm frequency
 
 uint16_t chargecurrent = 0;       // in 0,1A
@@ -90,7 +90,7 @@ uint16_t discurrent = 0;          // in 0,1A
 */
 byte alarm[4],warning[4] = {0, 0, 0, 0};
 
-uint32_t warning_timer = 0;
+// uint32_t warning_timer = 0;
 
 unsigned char bmcname[8] = {'J', 'O', 'E', 'M', ' ', 'B', 'M', 'C'};
 unsigned char bmcmanu[8] = {'J', 'O', 'E', 'M', ' ', 'T', 'E', 'C'};
@@ -109,9 +109,9 @@ byte currentavg_counter = 0;
 int32_t RawCur;
 int32_t mampsecond = 0; // Range 0 = full to settings.cap * -1 = empty
 volatile int32_t mampsecondTimer = 0;
-uint32_t lastTime;
-uint32_t looptime, looptime1, UnderTime, cleartime, baltimer = 0; //ms
-byte Sen_Analogue_Num = 1; // 1 = Sensor 1; 2 = Sensor 2
+// uint32_t lastTime;
+// uint32_t looptime, looptime1, UnderTime, cleartime, baltimer = 0; //ms
+byte Sen_Analogue_active_Nr = 1; // active analogue sensor: 1 = Sensor 1; 2 = Sensor 2
 int16_t TCAP = 0; //Temperature corrected Capacity in Ah including settings.Pstrings!
 int16_t TCAP_Wh = 0;
 //Variables for SOC calc
@@ -132,8 +132,8 @@ u_int32_t v_CAN_Charger_Active_Timer = 0; // Reset-timer for v_CAN_Charger_Activ
 //variables
 byte storagemode = 0;
 byte precharged = 0;
-byte Out_Print_ON = 1;
-byte Modules_Print_ON = 1;
+// byte Out_Print_ON = 1;
+// byte Modules_Print_ON = 1;
 
 byte output_debug_counter = 0;
 
@@ -196,14 +196,14 @@ String Out_Functions[] = {
 #define Out_Cooling 10
 #define Out_Gauge 11
 
-uint32_t cont_timer = 0;
-uint32_t Out_PWM_fullpull_Timer = 0; // PWM Timer
+// uint32_t cont_timer = 0;
+//uint32_t Out_PWM_fullpull_Timer = 0; // PWM Timer
 
 // CAN
 FlexCAN_T4<CAN1> can1;
 FlexCAN_T4<CAN2> can2;
 
-uint32_t CAN_BMC_Std_send_Timer = 0;
+// uint32_t CAN_BMC_Std_send_Timer = 0;
 
 // Debugging modes
 bool debug = 1;
@@ -314,6 +314,7 @@ void loadDefaultSettings(){
   settings.CAN_Map[0][i] = 0;
   settings.CAN_Map[1][i] = 0;
   }
+  settings.SOC = 0;
 }
 
 WDT_T4<WDT1> watchdog;
@@ -359,7 +360,7 @@ void setup(){
   adc->adc0->setResolution(16); // set bits of resolution
   adc->adc0->setConversionSpeed(ADC_CONVERSION_SPEED::HIGH_SPEED);
   adc->adc0->setSamplingSpeed(ADC_SAMPLING_SPEED::LOW_SPEED);
-  adc->adc0->startContinuous(ACUR1);
+  adc->adc0->startContinuous(IN_ACUR1);
 
   //delay(2000);  //just for easy debugging. It takes a few seconds for USB to come up properly on most OS's  
   Serial_USB.begin(115200);
@@ -384,6 +385,7 @@ void setup(){
 //called by Timer
 void mAmpsec_calc(){ 
   uint32_t nowTime = millis();
+  static uint32_t lastTime = 0;
   float tmpTime = 0;
   int32_t tmpmampsecond = 0;
   tmpTime = nowTime - lastTime;
@@ -395,8 +397,12 @@ void mAmpsec_calc(){
 }
 
 void loop(){
-  BMC_Status_LED();
+  static byte Modules_Print_ON = 1;
+  static byte Out_Print_ON = 1;
 
+  BMC_Status_LED();
+  //BOD(analogRead(IN_BOD)); // [ToDo] detect voltage drop on 12V side
+  
   //everything CAN related happens here
   CAN_read();
 
@@ -405,13 +411,14 @@ void loop(){
   }
 
   // make serial console available after 3s
-  if (millis() > 3000 && Serial_USB.available()){
+  if (millis() > 3000 && activeSerial->available()){
     if(menu_load){Menu();}
     else{
-      char tmp_Char = Serial_USB.read();
-      if(tmp_Char == 'o'){Out_Print_ON = !Out_Print_ON;}
-      if(tmp_Char == 'b'){Modules_Print_ON = !Modules_Print_ON;}
-      if(tmp_Char == 'm'){menu_load = 1; Menu();}
+      String tmp_String = activeSerial->readString();
+      tmp_String.trim();
+      if(tmp_String == 'o'){Out_Print_ON = !Out_Print_ON;}
+      if(tmp_String == 'b'){Modules_Print_ON = !Modules_Print_ON;}
+      if(tmp_String == "menu"){menu_load = 1; Menu();}
     }
   }
 
@@ -438,9 +445,10 @@ void loop(){
     }
   }
 
+  static uint32_t looptime = 0;
   if (millis() - looptime > 500){ // 0.5s loop
     looptime = millis();
-
+    
     // TCAP is negative. 0 = full, settings.CAP * -1 is empty.
     TCAP = settings.Pstrings * CAP_Temp_alteration() * -1;
     TCAP_Wh = TCAP * round(double(bms.getPackVoltage()) / 1000) * -1; // [ToDo] value will fluctuate
@@ -470,7 +478,6 @@ void loop(){
 
     if (settings.secondarySerial == 0){ Dash_update(); }//Info on serial bus 2
     //if (settings.secondarySerial == 2){ BT_update(); }// --> Bluetooth App
-    
     //WDT reset;
     watchdog.feed();
   }
@@ -527,13 +534,21 @@ void Reset_Cause(uint32_t resetStatusReg) {
   }
 }
 
+void BOD(int16_t ADC_read){
+  if (ADC_read <= 4000){
+    activeSerial->printf("::::::::::::::::::::::::BOD triggered::::::::::::::::::::::::\r\n");
+    settings.SOC = SOC;
+    EEPROM.put(0,settings);
+  }
+}
+
 void BMSInit(){
   bms.initBMS(settings.BMSType,settings.IgnoreVolt,settings.useTempSensor,settings.ReadTimeout);
 }
 
 // Returns 1 if requested Warning or Alarm is raised. Type 0 = ignored, 1 = Warning, 2 = Error
 bool WarnAlarm_Check(byte Type, byte WarnAlarm){
-
+  static uint32_t warning_timer = 0;
   byte hyst = 5; // 0.5°C hysteresis [ToDO] make config.
 
   // reset to all OK
@@ -854,6 +869,7 @@ void BMC_Statemachine(byte status){
 }
 
 void BMC_Status_LED(){
+  static uint32_t LED_Timer = 0;
   if(BMC_Stat == Stat_Error){
     if(!LED_Timer){LED_Timer = millis();}
     if(millis() - LED_Timer > 500){
@@ -865,6 +881,7 @@ void BMC_Status_LED(){
   }
 }
 
+// triggered by statemachine
 void Balancing(bool active){
   if (active && bms.getHighCellVolt() > settings.balanceVoltage && bms.getHighCellVolt() > bms.getLowCellVolt() + settings.balanceHyst){
     bms.Balancing(settings.balanceHyst, true);
@@ -873,7 +890,7 @@ void Balancing(bool active){
   }
 }
 
-void Serial_Print(bool Modules_Print_ON){
+void Serial_Print(bool Modules_Print){
   Serial_clear();
   activeSerial->printf("Firmware:   %i\r\n", firmver);
   activeSerial->printf("BMC Status: ");
@@ -894,16 +911,16 @@ void Serial_Print(bool Modules_Print_ON){
   activeSerial->printf("Cells: %u/%u",bms.getSeriesCells(),settings.Scells * settings.Pstrings);
 
   if (bms.getBalancing()){ activeSerial->printf(" | Balancing Active\r\n\n"); } else { activeSerial->printf("\r\n\n"); }
-  if(Modules_Print_ON){bms.printPackDetails();}
+  if(Modules_Print){bms.printPackDetails();}
   else{activeSerial->printf("Modules / Cells hidden\r\n");}
   if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_External)){
     activeSerial->printf("!!! Internal Error / Series Cells Fault !!!\r\n\n");
   } else { activeSerial->printf("\r\n");}
   
   if (settings.CurSenType == Sen_AnalogueDual){
-    if (Sen_Analogue_Num == 1)
+    if (Sen_Analogue_active_Nr == 1)
       { activeSerial->printf("Analogue Low:  "); }
-    else if (Sen_Analogue_Num == 2)
+    else if (Sen_Analogue_active_Nr == 2)
       { activeSerial->printf("Analogue High: "); }
   }
   if (settings.CurSenType == Sen_AnalogueSing)
@@ -958,25 +975,25 @@ uint32_t SEN_AnalogueRead(int32_t tmp_currrentlast){
   int32_t tmp_current = 0;
   switch (settings.CurSenType){
     case Sen_AnalogueSing:
-      Sen_Analogue_Num = 1;
-      adc->adc0->startContinuous(ACUR1);   
+      Sen_Analogue_active_Nr = 1;
+      adc->adc0->startContinuous(IN_ACUR1);   
     break;
     case Sen_AnalogueDual:
       if (tmp_currrentlast < settings.analogueSen_ChangeCur && tmp_currrentlast > (settings.analogueSen_ChangeCur * -1)){
-        if (Sen_Analogue_Num == 2){adc->adc0->stopContinuous();}
-        Sen_Analogue_Num = 1;
-        adc->adc0->startContinuous(ACUR1);
+        if (Sen_Analogue_active_Nr == 2){adc->adc0->stopContinuous();}
+        Sen_Analogue_active_Nr = 1;
+        adc->adc0->startContinuous(IN_ACUR1);
       }else{
-        if (Sen_Analogue_Num == 1){adc->adc0->stopContinuous();}
-        Sen_Analogue_Num = 2;
-        adc->adc0->startContinuous(ACUR2);
+        if (Sen_Analogue_active_Nr == 1){adc->adc0->stopContinuous();}
+        Sen_Analogue_active_Nr = 2;
+        adc->adc0->startContinuous(IN_ACUR2);
       }    
     break;
   }
 
   Sen_AnalogueRawValue= (uint16_t)adc->adc0->analogReadContinuous(); 
 
-  switch (Sen_Analogue_Num){
+  switch (Sen_Analogue_active_Nr){
     case 1:
       RawCur = round(((float(Sen_AnalogueRawValue) * 3300 / adc->adc0->getMaxValue()) - settings.analogueSen1_offset) / (float(settings.analogueSen1_convlow) / 100 / 1000 / (5 / 3.3)));
       if (labs((round((float(Sen_AnalogueRawValue) * 3300 / adc->adc0->getMaxValue()) - settings.analogueSen1_offset))) <  settings.analogueSen_CurDead) { RawCur = 0; }
@@ -1089,14 +1106,14 @@ void Currentavg_Calc(){
 
 void Current_debug(){
   if ( settings.CurSenType == Sen_AnalogueDual || settings.CurSenType == Sen_AnalogueSing){
-    if (Sen_Analogue_Num == 1){
+    if (Sen_Analogue_active_Nr == 1){
       activeSerial->printf("\r\n");
       if (settings.CurSenType == Sen_AnalogueDual)
       {activeSerial->printf("Low Range: ");}
       else
       {activeSerial->printf("Single In: ");}
       activeSerial->printf("Value ADC0: %i  %i  %i  %imA  ",Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue(),settings.analogueSen1_offset,Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue() - settings.analogueSen1_offset,RawCur);
-    }else if (Sen_Analogue_Num == 2){
+    }else if (Sen_Analogue_active_Nr == 2){
       activeSerial->printf("\r\n");
       activeSerial->printf("High Range: Value ADC0: %i  %i  %i  %imA  ",Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue(),settings.analogueSen2_offset,Sen_AnalogueRawValue * 3300 / adc->adc0->getMaxValue() - settings.analogueSen2_offset,RawCur);
     }
@@ -1124,21 +1141,31 @@ uint16_t SOH_calc(){
 
 void SOC_update(){
   int16_t SOC_tmp = 0;
+  bool SOC_restored = false;
+
   if (millis() > 10000 && bms.getAvgCellVolt() > 0){
     
     if(!SOCset || settings.voltsoc){      
-      SOC_tmp = map(bms.getAvgCellVolt(), settings.socvolt[0], settings.socvolt[2], settings.socvolt[1], settings.socvolt[3]);
-      SOC = constrain(SOC_tmp, 0, 100);// keep SOC bettween 0 and 100
-      mampsecond = (100 - SOC) * TCAP * (3600000/100);
-      if(!SOCset){
-        SOCset = 1;
-        if (!menu_load){
-          activeSerial->printf("\r\n--------SOC SET: %i%%, %imAs--------",SOC,mampsecond);
-        }
+      if(settings.SOC == 0) { // check if there was an SOC value in EEPROM
+        activeSerial->println("SOC was 0");
+        SOC_tmp = map(bms.getAvgCellVolt(), settings.socvolt[0], settings.socvolt[2], settings.socvolt[1], settings.socvolt[3]);
+      } else {
+        activeSerial->println("SOC was not 0");
+        SOC_tmp = settings.SOC; // get SOC from EEPROM
+        SOC_restored = true;
       }
+      mampsecond = (100 - SOC_tmp) * TCAP * (3600000/100);
     } else {
         SOC_tmp = round((TCAP - double(mampsecond) / 3600000) * 100 / TCAP);
-        SOC = constrain(SOC_tmp, 0, 100);// keep SOC bettween 0 and 100
+    }
+    
+    SOC = constrain(SOC_tmp, 0, 100);// keep SOC bettween 0 and 100
+    
+    if(!SOCset){
+      SOCset = 1;
+      if (!menu_load){
+        activeSerial->printf("\r\n--------SOC %s: %i%%, %imAs--------",SOC_restored?"restored":"set",SOC,mampsecond);
+      }
     }
   }
 }
@@ -1241,6 +1268,7 @@ void set_OUT_States(byte Function){
 
 // Set output pins according to Out_States.
 void set_OUTs(){
+  static uint32_t cont_timer = 0;
   u_int32_t tmp_timer = millis() - cont_timer;
   for (byte i = 1; i < 9;i++){
     if(i<5){digitalWrite(*Outputs[i], Out_States[0][settings.Out_Map[0][i]]);} // digitalWrite(Outn, HIGH/LOW)
@@ -1267,8 +1295,8 @@ void set_OUTs(){
   cont_timer = millis();
 }
 
-void OUT_print(bool Out_Print_ON){
-  if(!Out_Print_ON){return;}
+void OUT_print(bool Out_Print){
+  if(!Out_Print){return;}
 
   activeSerial->printf("Function         State Timer\r\n");
   activeSerial->printf("----------------------------\r\n");
@@ -1310,23 +1338,24 @@ byte Gauge_update(){
 }
 
 void Prechargecon(){
-  if (!Pretimer){Pretimer = millis();}
+  static uint32_t Precharge_Timer;
+  if (!Precharge_Timer){Precharge_Timer = millis();}
   Out_States[0][Out_Cont_Neg] = 1;    
-  if (Pretimer + settings.PreTime > millis()){ //  Add later (|| currentact < settings.PreCurrent)
+  if (Precharge_Timer + settings.PreTime > millis()){ //  Add later (|| currentact < settings.PreCurrent)
     Out_States[0][Out_Cont_Precharge] = 1; 
     precharged = 0;
   }else{ 
     Out_States[0][Out_Cont_Pos] = 1;
     Out_States[0][Out_Cont_Precharge] = 0;
-    Pretimer = 0;
+    Precharge_Timer = 0;
     precharged = 1;
   }
 }
 
 void CurrentOffsetCalc(){
 
-  adc->adc0->startContinuous(ACUR1);
-  Sen_Analogue_Num = 1;
+  adc->adc0->startContinuous(IN_ACUR1);
+  Sen_Analogue_active_Nr = 1;
   activeSerial->printf(" Calibrating Current Offset ");
   for (byte i = 0; i < 20; i++){
     settings.analogueSen1_offset = settings.analogueSen1_offset + ((uint16_t)adc->adc0->analogReadContinuous() * 3300 / adc->adc0->getMaxValue());
@@ -1337,8 +1366,8 @@ void CurrentOffsetCalc(){
   activeSerial->printf("\r\n Current offset 1 calibrated: %i \r\n",settings.analogueSen1_offset);
 
   if(settings.CurSenType == Sen_AnalogueDual){
-    adc->adc0->startContinuous(ACUR2);
-    Sen_Analogue_Num = 2;
+    adc->adc0->startContinuous(IN_ACUR2);
+    Sen_Analogue_active_Nr = 2;
     activeSerial->printf(" Calibrating Current Offset ");
     for (byte i = 0; i < 20; i++){
       settings.analogueSen2_offset = settings.analogueSen2_offset + ((uint16_t)adc->adc0->analogReadContinuous() * 3300 / adc->adc0->getMaxValue());
@@ -1351,15 +1380,20 @@ void CurrentOffsetCalc(){
 }
 
 void Menu(){
+  static byte menu_current = 0;
+  static byte menu_option = 0;
   String menu_option_string;
   char menu_option_char;
   int32_t menu_option_val = 0;
   float menu_option_val_Float = 0.0;
   String menu_option_val_String = "0";  
-//  menu_option = 0;
-   
-  if (Serial_USB.available()){
-    menu_option_string = Serial_USB.readString(); 
+  
+  //  menu_option = 0;
+  if (activeSerial->available()){
+  //if (Serial_USB.available()){
+    //menu_option_string = Serial_USB.readString(); 
+    menu_option_string = activeSerial->readString(); 
+    menu_option_string.trim();
     menu_option_char = menu_option_string.charAt(0);
     menu_option = menu_option_string.toInt();
     if (menu_option == 0){ menu_option = menu_option_char; }
@@ -1647,7 +1681,7 @@ void Menu(){
         activeSerial->printf("[1] Controller Type: ");
         switch (settings.mctype){
           case 0: activeSerial->printf("not configured\r\n"); break;
-          case 1: activeSerial->printf("Curtis\r\n”"); break;
+          case 1: activeSerial->printf("Curtis\r\n"); break;
           default: activeSerial->printf("undefined\r\n");
         }
         activeSerial->printf("\r\n");
@@ -2098,6 +2132,7 @@ void CAN_read(){
 }
 
 void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
+  static uint32_t CAN_BMC_Std_send_Timer = 0;
   if(CAN_BMC_Std_send_Timer + 500 >= millis()){return;} // Timer 1s;
   if(!CAN_Nr){return;} // No CanNr. set.
 
@@ -2425,6 +2460,7 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
 
 void CAN_Charger_Send(byte CAN_Nr){
   CAN_message_t MSG;
+  static uint32_t looptime1 = 0;
   // CAN intervall [ToDo] Intervall for CAN2?
   if (millis() - looptime1 < settings.CAN1_Interval){return;}
   looptime1 = millis();

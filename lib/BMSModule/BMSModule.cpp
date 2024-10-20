@@ -107,7 +107,7 @@ bool BMSModule::VW_decodeV(CAN_message_t &msg, byte Id){
             if (msg.buf[2] != 0xFF){ //Check module is not initializing OR a "spoof module" 
                 CMUerror = 0;
                 cellVolt[12] = (uint16_t(msg.buf[1] >> 4) + uint16_t(msg.buf[2] << 4) + 1000);
-                retVal = true;    
+                retVal = true;
             }
         break;
 

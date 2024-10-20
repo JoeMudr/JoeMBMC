@@ -69,15 +69,15 @@ CAN_Struct BMSManager::poll(){
     msg = clearCANStruct();
     switch (BMSType){
         case BMS_VW_eGolf: 
-        case BMS_VW_MEB: 
+        case BMS_VW_MEB: // [ToDo] [ToTest] VW MEB CMUs send data without polling.
         {        
-            if(millis() - polltime < 500) break; // poll erevy 500ms
+            if(millis() - polltime < 500) break; // poll every 500ms
             moduleReadCnt = 0;
             polltime = millis();
 
             msg = Balancing(0,false); // deactivate balancing for measurement first
             
-            //Attention: CAN_Struct has to be big enough to hold all messages!
+            //Attention: CAN_Struct has to be big enough to hold all messages! Use vectors?
             byte msgNr;
             for(msgNr = 0; msgNr < CAN_Struct_size; msgNr++){
                 if(!msg.Frame[msgNr].id) break; //find first unused ID.
@@ -191,28 +191,44 @@ void BMSManager::readModulesValues(){
 void BMSManager::readModulesValues(CAN_message_t &msg){
     bool chkRead = false;
     byte CMU, Id = 0;
+    static byte lastReadCMU = 0;
     switch (BMSType){
         case BMS_VW_eGolf:
         case BMS_VW_MEB:
         {
             VW_get_CMU_ID(msg, CMU, Id);
+            // reset read count when first message comes in. Given messages come in in correct order.
+            if(CMU == 1 && Id == 0) {
+                moduleReadCnt = 0;
+                lastReadCMU = 0;
+            } 
             if(CMU){
                 chkRead = modules[CMU].readModule(msg, Id);
                 if (chkRead){
                     modules[CMU].setExists(true);
-                    moduleReadCnt++;
+                    if (CMU > lastReadCMU){
+                        lastReadCMU = CMU;
+                        moduleReadCnt++;
+                    }
                 };
             }
         }
         break;
         case BMS_BMW_I3:
-        BMW_get_CMU_ID(msg, CMU, Id);
-            if(CMU)
-            {
+            BMW_get_CMU_ID(msg, CMU, Id);
+            // reset read count when first message comes in. Given messages come in in correct order.
+            if(CMU == 1 && Id == 0) {
+                moduleReadCnt = 0;
+                lastReadCMU = 0;
+            }         
+            if(CMU){
                 chkRead = modules[CMU].readModule(msg, Id);
                 if (chkRead){
                     modules[CMU].setExists(true);
-                    moduleReadCnt++;
+                    if (CMU > lastReadCMU){
+                        lastReadCMU = CMU;
+                        moduleReadCnt++;
+                    }
                 };
             }
         break;
@@ -467,7 +483,7 @@ CAN_Struct BMSManager::Balancing(uint16_t BalHys, bool active){
 
     // check if all messages for module values have been received. If not, do not balance!
     if(active && moduleReadCnt != getNumModules()){
-        activeSerial->printf(" not all messages recieved! %i/%i",moduleReadCnt,numFoundModules);
+        activeSerial->printf(" not all messages recieved! %i/%i\r\n",moduleReadCnt,numFoundModules);
         return BalanceMatrix;
     }
 

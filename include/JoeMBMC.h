@@ -68,3 +68,4 @@ uint32_t CAP_Temp_alteration();
 void OUT_print(bool Out_Print_ON);
 bool Charge_Active();
 uint32_t ConvertToBin(uint32_t Input);
+void BOD(int16_t ADC_read);
