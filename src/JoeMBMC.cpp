@@ -68,7 +68,7 @@ bool menu_load = 0;
 //Errors
 uint32_t error_timer = 0;
 
-byte Settings_unsaved= 0;
+byte Settings_unsaved = 0;
 
 //variables for output control
 // uint32_t Precharge_Timer;
@@ -104,7 +104,6 @@ uint16_t Sen_AnalogueRawValue;
 int32_t currentact = 0; // mA
 int32_t currentlast = 0; // mA
 //int32_t currentavg = 0; // mA
-
 // byte currentavg_counter = 0;
 int32_t RawCur;
 int32_t mampsecond = 0; // Range 0 = full to settings.cap * -1 = empty
@@ -991,7 +990,7 @@ uint32_t SEN_AnalogueRead(int32_t tmp_currrentlast){
     break;
   }
 
-  Sen_AnalogueRawValue= (uint16_t)adc->adc0->analogReadContinuous(); 
+  Sen_AnalogueRawValue = (uint16_t)adc->adc0->analogReadContinuous(); 
 
   switch (Sen_Analogue_active_Nr){
     case 1:
@@ -1008,7 +1007,6 @@ uint32_t SEN_AnalogueRead(int32_t tmp_currrentlast){
   tmp_current = settings.CurSenMultiplier * tmp_current;
   if (settings.CurSenInvert){ tmp_current *= -1; }
   return tmp_current;
-
 } 
 
 void CAN_SEN_read(CAN_message_t MSG, int32_t& CANmilliamps){
