@@ -412,10 +412,10 @@ void loop(){
 
   // make serial console available after 3s
   if (millis() > 3000 && activeSerial->available()){
-    if(menu_load){Menu();}
+    String tmp_String = activeSerial->readString();
+    tmp_String.trim();
+    if(menu_load){Menu(tmp_String);}
     else{
-      String tmp_String = activeSerial->readString();
-      tmp_String.trim();
       if(tmp_String == 'o'){Out_Print_ON = !Out_Print_ON;}
       if(tmp_String == 'b'){Modules_Print_ON = !Modules_Print_ON;}
       if(tmp_String == "menu"){menu_load = 1; Menu();}
@@ -1379,20 +1379,20 @@ void CurrentOffsetCalc(){
   }
 }
 
-void Menu(){
+void Menu(String menu_option_string){
   static byte menu_current = 0;
   static byte menu_option = 0;
-  String menu_option_string;
+  //String menu_option_string;
   char menu_option_char;
   int32_t menu_option_val = 0;
   float menu_option_val_Float = 0.0;
   String menu_option_val_String = "0";  
   
   //  menu_option = 0;
-  if (activeSerial->available()){
+  if (menu_option_string != ""){
   //if (Serial_USB.available()){
     //menu_option_string = Serial_USB.readString(); 
-    menu_option_string = activeSerial->readString(); 
+    //menu_option_string = activeSerial->readString(); 
     menu_option_string.trim();
     menu_option_char = menu_option_string.charAt(0);
     menu_option = menu_option_string.toInt();

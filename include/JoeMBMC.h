@@ -39,7 +39,7 @@ void DischargeCurrentLimit();
 void ChargeCurrentLimit();
 void Currentavg_Calc();
 void WDOG_reset();
-void Menu();
+void Menu(String Menu_Option = "");
 void ContCon();
 void Current_debug();
 void Serial_Print(bool Module_Print_ON);
