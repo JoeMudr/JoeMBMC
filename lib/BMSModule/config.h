@@ -156,7 +156,7 @@ enum {
   CAN_MC, CAN_MAP_MAX
 };
 
-#define EEPROM_VERSION      41   //update any time EEPROM struct below is changed.
+#define EEPROM_VERSION      42   //update any time EEPROM struct below is changed.
 #define EEPROM_PAGE         0
 
 typedef struct {
@@ -239,4 +239,7 @@ typedef struct {
   byte CAN_Map[2][CAN_MAP_MAX]; // index[0]: 0 = BMC-Output_std; 1 = BMC-Output_HV; 2 = BMS Communication; 3 = Chargers; 4 = Current Sensors; 5 = MotorController // Values: 0 = not set; 1 = Can1; 2 = Can2; 3 = Can1 & Can2 // index[1] Interval
 
   byte SOC;
+
+  byte Warning_Blink_Hz;
+  byte Error_Blink_Hz;
 } EEPROMSettings;

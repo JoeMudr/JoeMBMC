@@ -195,7 +195,6 @@ String Out_Functions[] = {
 #define Out_Cooling 10
 #define Out_Gauge 11
 
-// uint32_t cont_timer = 0;
 //uint32_t Out_PWM_fullpull_Timer = 0; // PWM Timer
 
 // CAN
@@ -314,6 +313,8 @@ void loadDefaultSettings(){
   settings.CAN_Map[1][i] = 0;
   }
   settings.SOC = 0;
+  settings.Warning_Blink_Hz = 0;
+  settings.Error_Blink_Hz = 0;
 }
 
 WDT_T4<WDT1> watchdog;
@@ -348,6 +349,7 @@ void setup(){
   analogWriteFrequency(OUT8, pwmfreq);
 
   EEPROM.get(0, settings);
+  // manage EEPROM versions
   if (settings.version != EEPROM_VERSION){ loadDefaultSettings(); }
   
   can1_start();
@@ -1257,9 +1259,9 @@ Return index/OutputNr. for specified function
 0 if nothing is found
 */
 byte find_OUT_Mapping(byte Function){
-  for(byte i = 1; i < 9; i++){
-    if(settings.Out_Map[0][i] == Function){
-      return i;
+  for(byte Output = 1; Output < 9; Output++){
+    if(settings.Out_Map[0][Output] == Function){
+      return Output;
     }
   } 
   return 0;
@@ -1269,11 +1271,11 @@ Change the function of the given output
 OUT1 = 1 ...
 */
 void cycle_OUT_Mapping(byte OUT){
-  byte i = get_OUT_Mapping(OUT,0) + 1;
-  if(OUT<5 && i==Out_Gauge){i++;} //Gauge not possible on 12V outputs
-  while(find_OUT_Mapping(i)){i++;} //doubles not possible
-  if(i>11){i=0;} //max number of different Output Types
-  set_OUT_Mapping(OUT,i,get_OUT_Mapping(OUT,1));
+  byte Function = get_OUT_Mapping(OUT,0) + 1;
+  if(OUT < 5 && Function == Out_Gauge){Function++;} //Gauge not possible on 12V outputs
+  while(find_OUT_Mapping(Function)){Function++;} //doubles not possible
+  if(Function > 11){Function = 0;} //max number of different Output Types
+  set_OUT_Mapping(OUT,Function,get_OUT_Mapping(OUT,1));
 }
 
 /*
@@ -1287,31 +1289,70 @@ void set_OUT_States(byte Function){
 
 // Set output pins according to Out_States.
 void set_OUTs(){
-  static uint32_t cont_timer = 0;
-  u_int32_t tmp_timer = millis() - cont_timer;
-  for (byte i = 1; i < 9;i++){
-    if(i<5){digitalWrite(*Outputs[i], Out_States[0][settings.Out_Map[0][i]]);} // digitalWrite(Outn, HIGH/LOW)
-    if(i>=5){
-      if(i != find_OUT_Mapping(Out_Gauge)){
+  static uint32_t lastrun = 0;
+  uint32_t tmp_timer = millis() - lastrun;
+  static uint16_t Warn_Blink_Timer = 0;
+  static uint16_t Error_Blink_Timer = 0;
+  static bool Warn_Blink = 1;
+  static bool Error_Blink = 1;
+
+  // Handle "blinking" for warnings and errors
+  if(settings.Warning_Blink_Hz && (millis() - Warn_Blink_Timer >= 1000/settings.Warning_Blink_Hz)){
+    Warn_Blink = !Warn_Blink;
+    Warn_Blink_Timer = millis();
+  }
+  if(settings.Error_Blink_Hz && (millis() - Error_Blink_Timer >= 1000/settings.Error_Blink_Hz)){
+    Error_Blink = !Error_Blink;
+    Error_Blink_Timer = millis();
+  }
+
+  for (byte Out_Cnt = 1; Out_Cnt < 9;Out_Cnt++){
+    byte State = Out_States[0][settings.Out_Map[0][Out_Cnt]];
+    byte Timer = Out_States[1][settings.Out_Map[0][Out_Cnt]];
+    // [ToTest]
+    // find warning output and override State with "blinking"
+    if(Out_Cnt == find_OUT_Mapping(Out_Warning)){
+      State = State * Warn_Blink;
+    }
+
+    // find error output and override State with "blinking"
+    if(Out_Cnt == find_OUT_Mapping(Out_Error)){
+      State = State * Error_Blink;
+    }    
+
+    // find warning/error combined output and override State with "blinking"
+    if(Out_Cnt == find_OUT_Mapping(Out_Err_Warn)){
+      if(Out_States[0][Out_Warning]){
+        State = State * Warn_Blink;
+      }
+      // Error overrules warning
+      if(Out_States[0][Out_Error]){
+        State = State * Error_Blink;
+      }
+    }
+
+    if(Out_Cnt < 5){digitalWrite(*Outputs[Out_Cnt], State);} // digitalWrite(Outn, HIGH/LOW)
+    if(Out_Cnt >= 5){
+      if(Out_Cnt != find_OUT_Mapping(Out_Gauge)){
         if( // find contactors & check if ON and TIMER left for full pull
-          (i == find_OUT_Mapping(Out_Cont_Neg) || i == find_OUT_Mapping(Out_Cont_Pos) || i == find_OUT_Mapping(Out_Cont_Precharge)) && 
-          (Out_States[0][settings.Out_Map[0][i]] && Out_States[1][settings.Out_Map[0][i]])
+          (Out_Cnt == find_OUT_Mapping(Out_Cont_Neg) || Out_Cnt == find_OUT_Mapping(Out_Cont_Pos) || Out_Cnt == find_OUT_Mapping(Out_Cont_Precharge)) && 
+          (State && Timer)
           ){
-          analogWrite(*Outputs[i], Out_States[0][settings.Out_Map[0][i]]*255); // analogWrite(OUTn, HIGH/LOW * PWM)
-          if(Out_States[1][settings.Out_Map[0][i]] > tmp_timer){Out_States[1][settings.Out_Map[0][i]] -= tmp_timer;} //reduce Timer
-          else{Out_States[1][settings.Out_Map[0][i]] = 0;} // timer to 0
+          analogWrite(*Outputs[Out_Cnt], State*255); // analogWrite(OUTn, HIGH/LOW * PWM)
+          if(Timer > tmp_timer){Timer -= tmp_timer;} //reduce Timer
+          else{Timer = 0;} // timer to 0
         } else if ( // find contactors & check if OFF to reset TIMER
-          (i == find_OUT_Mapping(Out_Cont_Neg) || i == find_OUT_Mapping(Out_Cont_Pos) || i == find_OUT_Mapping(Out_Cont_Precharge)) && 
-          (!Out_States[0][settings.Out_Map[0][i]] && Out_States[1][settings.Out_Map[0][i]] != cont_pulltime)
+          (Out_Cnt == find_OUT_Mapping(Out_Cont_Neg) || Out_Cnt == find_OUT_Mapping(Out_Cont_Pos) || Out_Cnt == find_OUT_Mapping(Out_Cont_Precharge)) && 
+          (!State && Timer != cont_pulltime)
           ) {
-            Out_States[1][settings.Out_Map[0][i]] = cont_pulltime;
+            Timer = cont_pulltime;
         } else {
-          analogWrite(*Outputs[i], Out_States[0][settings.Out_Map[0][i]]*settings.Out_Map[1][i]);// analogWrite(OUTn, HIGH/LOW * PWM)
+          analogWrite(*Outputs[Out_Cnt], State * settings.Out_Map[1][Out_Cnt]);// analogWrite(OUTn, HIGH/LOW * PWM)
         }
       }
     } 
   }
-  cont_timer = millis();
+  lastrun = millis();
 }
 
 void OUT_print(bool Out_Print){
@@ -1768,13 +1809,17 @@ void Menu(String menu_option_string){
     break; 
     case Menu_Alarms:
       switch (menu_option){
-        case 1: settings.error_delay = menu_option_val; Menu(); break;             
+        case 1: settings.error_delay = menu_option_val; Menu(); break;
+        case 2: settings.Warning_Blink_Hz = menu_option_val; Menu(); break;
+        case 3: settings.Error_Blink_Hz = menu_option_val; Menu(); break;
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
           activeSerial->printf("Alarms\r\n");
           activeSerial->printf("--------------------\r\n");
           activeSerial->printf("[1] Error Delay (ms):             %5i\r\n",settings.error_delay);
+          activeSerial->printf("[2] Warning blink (Hz):           %5i\r\n",settings.Warning_Blink_Hz);
+          activeSerial->printf("[3] Error blink (Hz):             %5i\r\n",settings.Error_Blink_Hz);
           activeSerial->printf("\r\n");        
           activeSerial->printf("[q] Quit\r\n");          
       }
