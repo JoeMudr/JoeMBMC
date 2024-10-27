@@ -28,7 +28,7 @@
 Stream* activeSerial = &Serial_USB;
 
 /////Version Identifier/////////
-uint32_t firmver = 241020;
+uint32_t firmver = 241027;
 
 BMSManager bms;
 EEPROMSettings settings;
@@ -367,7 +367,7 @@ void setup(){
   Serial_BT.begin(115200);
   activeSerial->printf("Starting up...\r\n");
   activeSerial->printf("JoeM BMC\r\n");
-  //display and can adpater canbus
+  //display serial
   Serial_Display.begin(115200); 
   //Tesla serial bus
   Serial_BMS.begin(612500);
@@ -397,7 +397,7 @@ void mAmpsec_calc(){
 
 void loop(){
   static byte Modules_Print_ON = 1;
-  static byte Out_Print_ON = 1;
+  static byte Out_Print_ON = 0;
 
   BMC_Status_LED();
   //BOD(analogRead(IN_BOD)); // [ToDo] detect voltage drop on 12V side
@@ -904,7 +904,7 @@ void Serial_Print(bool Modules_Print){
   }
   if (Warn_Out_handle()){activeSerial->printf(" (Warning!)\r\n");} else {activeSerial->printf("\r\n");}
 
-  activeSerial->printf("\r\nCharge Current Limit: %5.2fA (%5.2fA), Factor: %3u% | Discharge Current Limit: %5.2fA \r\n",float(chargecurrent) * settings.nChargers / 10, float(chargecurrent) / 10, chargecurrentFactor, float(discurrent) / 10);
+  activeSerial->printf("\r\nCurrent Limit: Charge %5.2fA (%5.2fA), Factor: %3u% | Discharge %5.2fA \r\n",float(chargecurrent) * settings.nChargers / 10, float(chargecurrent) / 10, chargecurrentFactor, float(discurrent) / 10);
   activeSerial->printf("Vpack: %5.2fV | Vlow: %4umV | Vhigh: %4umV | DeltaV: %4umV | Tlow: %3.1f°C | Thigh: %3.1f°C\r\n",double(bms.getPackVoltage()) / 1000,bms.getLowCellVolt(),bms.getHighCellVolt(),bms.getHighCellVolt() - bms.getLowCellVolt(),float(bms.getLowTemperature()) / 10,float(bms.getHighTemperature()) / 10);
   activeSerial->printf("Cells: %u/%u",bms.getSeriesCells(),settings.Scells * settings.Pstrings);
 
@@ -1095,10 +1095,10 @@ int32_t Currentavg_Calc(){
   static byte currentavg_counter = 0;
   static uint32_t looptime = 0;
   static int32_t retval = 0;
-  int32_t currentavg_array[60];
+  static int32_t currentavg_array[60];
 
   // run once per 1s max
-  if (millis() < looptime + 1000) {return retval;}
+  if (millis() < looptime + 500) {return retval;}
 
   // reset on state machine change
   if (BMC_Stat != BMC_last_Stat) {
