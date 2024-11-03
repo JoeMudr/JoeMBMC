@@ -755,6 +755,7 @@ void BMSManager::Tesla_resetModules(){
     }
 }
 
+/*
 CAN_Struct BMSManager::clearCANStruct(){
     CAN_Struct msg;
     for(byte i = 0; i < CAN_Struct_size; i++){
@@ -767,3 +768,4 @@ CAN_Struct BMSManager::clearCANStruct(){
     }
     return msg;
 }
+*/
