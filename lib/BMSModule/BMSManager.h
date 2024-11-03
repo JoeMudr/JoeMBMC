@@ -67,7 +67,6 @@ private:
     void Tesla_findModules();
     void Tesla_clearFaults();
     void Tesla_resetModules();
-    CAN_Struct clearCANStruct(); // returns an empty initialized CAN_Struct
     void UpdateValues();
     CRC8 crc8;
     uint32_t ReadTimeout;

@@ -149,7 +149,8 @@ const byte *Outputs[9] = {0,&OUT1,&OUT2,&OUT3,&OUT4,&OUT5,&OUT6,&OUT7,&OUT8};
 Array for function states & according timers for PWMs (full pull->reduced power)
 [0][x] Function State (High/Low); [1][x] timer
 */
-byte Out_States[2][12] = {{0,0,0,0,0,0,0,0,0,0,0,0},{0,cont_pulltime,cont_pulltime,cont_pulltime,0,0,0,0,0,0,0,0}}; 
+#define Out_States_Max 13
+byte Out_States[2][Out_States_Max] = {{0,0,0,0,0,0,0,0,0,0,0,0,0},{0,cont_pulltime,cont_pulltime,cont_pulltime,0,0,0,0,0,0,0,0,0}}; 
 
 /*
 Text desctiptions for output funktions:
@@ -165,6 +166,7 @@ Text desctiptions for output funktions:
 9 - Heating enable, 
 10 - Cooling enable, 
 11 - Gauge
+12 - Balance enable
 */
 String Out_Functions[] = {
   "undefined", 
@@ -178,7 +180,8 @@ String Out_Functions[] = {
   "Error & Warning",
   "Heating enable", 
   "Cooling enable", 
-  "Gauge"
+  "Gauge",
+  "Balance enable"
 };
 
 //IDs for Array above
@@ -194,6 +197,7 @@ String Out_Functions[] = {
 #define Out_Heating 9
 #define Out_Cooling 10
 #define Out_Gauge 11
+#define Out_Balance 12
 
 //uint32_t Out_PWM_fullpull_Timer = 0; // PWM Timer
 
@@ -883,8 +887,20 @@ void BMC_Status_LED(){
 
 // triggered by statemachine
 void Balancing(bool active){
+  CAN_Struct BalanceMatrix;
+  BalanceMatrix = clearCANStruct();
   if (active && bms.getHighCellVolt() > settings.balanceVoltage && bms.getHighCellVolt() > bms.getLowCellVolt() + settings.balanceHyst){
-    bms.Balancing(settings.balanceHyst, true);
+    BalanceMatrix = bms.Balancing(settings.balanceHyst, true);
+    for (byte CANMsgNr = 0; CANMsgNr < CAN_Struct_size; CANMsgNr++){
+      if (BalanceMatrix.Frame[CANMsgNr].id){ // We only send actually filled Frames.
+      //[ToDo] restrict to interval? will otherwise flood the CAN bus.
+      /*
+        if (settings.CAN_Map[0][CAN_BMS] & 1){can1.write(BalanceMatrix.Frame[CANMsgNr]);}
+        if (settings.CAN_Map[0][CAN_BMS] & 2){can2.write(BalanceMatrix.Frame[CANMsgNr]);}
+        delay(1);
+        */
+      }
+    }
   } else {
     bms.Balancing(settings.balanceHyst, false);
   }
@@ -1283,7 +1299,7 @@ no parameter = all functions off
 Use parameter (function) to activate corresponding function.
 */
 void set_OUT_States(byte Function){
-  if (Function == 254){for (byte i = 0; i < 12; i++){Out_States[0][i] = 0;}} // all off
+  if (Function == 254){for (byte i = 0; i < Out_States_Max; i++){Out_States[0][i] = 0;}} // all off
   else {Out_States[0][Function] = 1;}
 }
 
@@ -1291,8 +1307,8 @@ void set_OUT_States(byte Function){
 void set_OUTs(){
   static uint32_t lastrun = 0;
   uint32_t tmp_timer = millis() - lastrun;
-  static uint16_t Warn_Blink_Timer = 0;
-  static uint16_t Error_Blink_Timer = 0;
+  static uint32_t Warn_Blink_Timer = 0;
+  static uint32_t Error_Blink_Timer = 0;
   static bool Warn_Blink = 1;
   static bool Error_Blink = 1;
 
@@ -1300,6 +1316,7 @@ void set_OUTs(){
   if(settings.Warning_Blink_Hz && (millis() - Warn_Blink_Timer >= 1000/settings.Warning_Blink_Hz)){
     Warn_Blink = !Warn_Blink;
     Warn_Blink_Timer = millis();
+    activeSerial->printf("%d",Warn_Blink);
   }
   if(settings.Error_Blink_Hz && (millis() - Error_Blink_Timer >= 1000/settings.Error_Blink_Hz)){
     Error_Blink = !Error_Blink;
@@ -1360,13 +1377,13 @@ void OUT_print(bool Out_Print){
 
   activeSerial->printf("Function         State Timer\r\n");
   activeSerial->printf("----------------------------\r\n");
-  for(byte i = 1; i < 12; i++){ //[ToDo] us array size for loop
+  for(byte i = 1; i < Out_States_Max; i++){
     activeSerial->printf("%-16s %5i %5i\r\n",Out_Functions[i].c_str(),Out_States[0][i],Out_States[1][i]);
   } 
   activeSerial->printf("\r\n");
   activeSerial->printf("Output        Function  PWM\r\n");
   activeSerial->printf("---------------------------\r\n");
-  for(byte i = 1; i < 9; i++){ //[ToDo] us array size for loop
+  for(byte i = 1; i < 9; i++){ //[ToDo] use array size for loop?
     activeSerial->printf("OUT%i   %16s ",i,Out_Functions[settings.Out_Map[0][i]].c_str());
     if(i>4){
       if(settings.Out_Map[0][i] == Out_Gauge){activeSerial->printf("%3i",Gauge_update());} // get Gauge PWM directly from function.
@@ -2197,7 +2214,7 @@ void CAN_read(){
 
 void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   static uint32_t CAN_BMC_Std_send_Timer = 0;
-  if(CAN_BMC_Std_send_Timer + 500 >= millis()){return;} // Timer 1s;
+  if(millis() - CAN_BMC_Std_send_Timer <= 1000){return;} // Timer 1s;
   if(!CAN_Nr){return;} // No CanNr. set.
 
   CAN_message_t MSG;
