@@ -28,7 +28,7 @@
 Stream* activeSerial = &Serial_USB;
 
 /////Version Identifier/////////
-uint32_t firmver = 241027;
+uint32_t firmver = 241202;
 
 BMSManager bms;
 EEPROMSettings settings;
@@ -1029,34 +1029,34 @@ uint32_t SEN_AnalogueRead(int32_t tmp_currrentlast){
 
 void CAN_SEN_read(CAN_message_t MSG, int32_t& CANmilliamps){
   //int32_t CANmilliamps = 0;
-  bool newVal = true;
+  bool newVal = false;
   switch (MSG.id){
-    //LEM CAB
-    // [ToTest] CAB1500 has same ID. ALso same Data?
-    case 0x3c0: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-000
-    case 0x3c1: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-001
-    case 0x3c2: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-002 & CAB 300-C/SP3-010 & CAB-500 (all Versions)
-    case 0x3c3: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-003
-    case 0x3c4: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-004
-    case 0x3c5: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-005
-    case 0x3c6: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-006
-    case 0x3c7: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-007
-    case 0x3c8: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-008
-    case 0x3c9: CANmilliamps = CAN_SEN_LEMCAB(MSG); break; //CAB 300-C/SP3-009
+    //LEM CAB [ToTest] CAB1500 has same ID. ALso same Data?
+    case 0x3c0: //CAB 300-C/SP3-000
+    case 0x3c1: //CAB 300-C/SP3-001
+    case 0x3c2: //CAB 300-C/SP3-002 & CAB 300-C/SP3-010 & CAB-500 (all Versions)
+    case 0x3c3: //CAB 300-C/SP3-003
+    case 0x3c4: //CAB 300-C/SP3-004
+    case 0x3c5: //CAB 300-C/SP3-005
+    case 0x3c6: //CAB 300-C/SP3-006
+    case 0x3c7: //CAB 300-C/SP3-007
+    case 0x3c8: //CAB 300-C/SP3-008
+    case 0x3c9: //CAB 300-C/SP3-009
+      CANmilliamps = CAN_SEN_LEMCAB(MSG); newVal = true; break; 
     //IsaScale
-    case 0x521: CANmilliamps = MSG.buf[5] + (MSG.buf[4] << 8) + (MSG.buf[3] << 16) + (MSG.buf[2] << 24); break;
+    case 0x521: 
+      CANmilliamps = MSG.buf[5] + (MSG.buf[4] << 8) + (MSG.buf[3] << 16) + (MSG.buf[2] << 24); newVal = true; break;
     //case 0x522: ISAVoltage1 = MSG.buf[5] + (MSG.buf[4] << 8) + (MSG.buf[3] << 16) + (MSG.buf[2] << 24); break;
     //case 0x523: ISAVoltage2 = MSG.buf[5] + (MSG.buf[4] << 8) + (MSG.buf[3] << 16) + (MSG.buf[2] << 24); break;    
-    default: newVal = false; break;
+    //default: newVal = false; activeSerial->println("false"); break;
   }
 
   //Victron Lynx  
   if (pgnFromCANId(MSG.id) == 0x1F214 && MSG.buf[0] == 0) // Check PGN and only use the first packet of each sequence
-  {CANmilliamps = CAN_SEN_VictronLynx(MSG);}
-  else {newVal = false;}
+  {CANmilliamps = CAN_SEN_VictronLynx(MSG); newVal = true; }
+  //else {newVal = false;activeSerial->println("false2");}
 
-  if (settings.CurSenInvert && newVal){ CANmilliamps *= -1; }
-  //return CANmilliamps;
+  if (settings.CurSenInvert && newVal){ CANmilliamps *= -1;}
 }
 
 int32_t CAN_SEN_LEMCAB(CAN_message_t MSG){
@@ -1316,7 +1316,6 @@ void set_OUTs(){
   if(settings.Warning_Blink_Hz && (millis() - Warn_Blink_Timer >= 1000/settings.Warning_Blink_Hz)){
     Warn_Blink = !Warn_Blink;
     Warn_Blink_Timer = millis();
-    activeSerial->printf("%d",Warn_Blink);
   }
   if(settings.Error_Blink_Hz && (millis() - Error_Blink_Timer >= 1000/settings.Error_Blink_Hz)){
     Error_Blink = !Error_Blink;
@@ -1355,20 +1354,24 @@ void set_OUTs(){
           (Out_Cnt == find_OUT_Mapping(Out_Cont_Neg) || Out_Cnt == find_OUT_Mapping(Out_Cont_Pos) || Out_Cnt == find_OUT_Mapping(Out_Cont_Precharge)) && 
           (State && Timer)
           ){
-          analogWrite(*Outputs[Out_Cnt], State*255); // analogWrite(OUTn, HIGH/LOW * PWM)
+          analogWrite(*Outputs[Out_Cnt], 255); // analogWrite(OUTn, HIGH)
           if(Timer > tmp_timer){Timer -= tmp_timer;} //reduce Timer
           else{Timer = 0;} // timer to 0
+          Out_States[1][settings.Out_Map[0][Out_Cnt]] = Timer; // write back Timer
         } else if ( // find contactors & check if OFF to reset TIMER
           (Out_Cnt == find_OUT_Mapping(Out_Cont_Neg) || Out_Cnt == find_OUT_Mapping(Out_Cont_Pos) || Out_Cnt == find_OUT_Mapping(Out_Cont_Precharge)) && 
           (!State && Timer != cont_pulltime)
           ) {
-            Timer = cont_pulltime;
+            Out_States[1][settings.Out_Map[0][Out_Cnt]] = cont_pulltime; // reset Timer
+            analogWrite(*Outputs[Out_Cnt], 0); // analogWrite(OUTn, LOW) [toTest] remove?
         } else {
-          analogWrite(*Outputs[Out_Cnt], State * settings.Out_Map[1][Out_Cnt]);// analogWrite(OUTn, HIGH/LOW * PWM)
+          analogWrite(*Outputs[Out_Cnt], State * settings.Out_Map[1][Out_Cnt]); // analogWrite(OUTn, HIGH/LOW * PWM)
         }
       }
     } 
+
   }
+
   lastrun = millis();
 }
 
