@@ -715,6 +715,7 @@ byte Vehicle_CondCheck(byte tmp_status){
 }
 
 byte ESS_CondCheck(byte tmp_status){
+
   // Precharge first
   if (precharged){tmp_status = Stat_Idle;}
   else {tmp_status = Stat_Precharge;}  
@@ -740,7 +741,6 @@ byte ESS_CondCheck(byte tmp_status){
       {tmp_status = Stat_Error;}
 
   if (tmp_status != Stat_Error) {error_timer = 0;}
-  
   return tmp_status;
 }
 
@@ -814,14 +814,16 @@ void BMC_Statemachine(byte status){
     break;    
     case Stat_Charge:
       set_OUT_States(); // all off
+      set_OUT_States(Out_Charge);
+      set_OUT_States(Out_Cont_Neg);
+      set_OUT_States(Out_Cont_Pos);      
       CAP_recalc();
       if (Settings_unsaved){EEPROM.put(0, settings); Settings_unsaved = 0; activeSerial->printf("--Saved--\r\n");}
-      set_OUT_States(Out_Charge); // enable charger
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on
       Balancing(true);
-      CAN_Charger_Send(settings.CAN_Map[0][CAN_Charger]);
       ChargeCurrentLimit();
       Warn_Out_handle();
+      CAN_Charger_Send(settings.CAN_Map[0][CAN_Charger]);
       CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
     case Stat_Charged:
