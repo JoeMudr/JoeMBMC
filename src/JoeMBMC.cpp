@@ -835,7 +835,7 @@ void BMC_Statemachine(byte status){
       Warn_Out_handle();
     break;
     case Stat_Error:
-      if (!error_timer){ error_timer = millis() + settings.error_delay; }//10s delay before turning everything off
+      if (!error_timer){ error_timer = millis() + settings.error_delay; }// delay before turning everything off
       if (millis() > error_timer){
         set_OUT_States(); // all off
         set_OUT_States(Out_Error);
@@ -921,6 +921,7 @@ void Serial_Print(bool Modules_Print){
     case (Stat_Charged): activeSerial->printf("Charged"); break;
     case (Stat_Error): activeSerial->printf("Error"); break;
     case (Stat_Idle): activeSerial->printf("Idle"); break;
+    case (Stat_Discharge): activeSerial->printf("Discharge"); break; 
   }
   if (Warn_Out_handle()){activeSerial->printf(" (Warning!)\r\n");} else {activeSerial->printf("\r\n");}
 
@@ -2203,8 +2204,8 @@ void CAN_read(){
     if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 1){bms.readModulesValues(MSG); BMSLastRead = millis();}
     if (settings.CAN_Map[0][CAN_BMC_HV] & 1){CAN_BMC_HV_send(1, MSG);} // Send HV CAN triggered by Inverter
     if (debug_CAN1){CAN_Debug_IN(1, MSG);}
-    if (settings.CAN_Map[0][CAN_BMC_std] & 1) {CAN_TCU_read(MSG);}
-    if (settings.CAN_Map[0][CAN_Charger] & 1) {CAN_Charge_Check(MSG);}
+    if (settings.CAN_Map[0][CAN_BMC_std] & 1){CAN_TCU_read(MSG);}
+    if (settings.CAN_Map[0][CAN_Charger] & 1){CAN_Charge_Check(MSG);}
   }
   while (can2.read(MSG)){
     if (settings.CurSenType == Sen_Canbus && settings.CAN_Map[0][CAN_Curr_Sen] & 2){CAN_SEN_read(MSG, currentact);}
@@ -2212,8 +2213,8 @@ void CAN_read(){
     if (settings.BMSType != BMS_Tesla && settings.CAN_Map[0][CAN_BMS] & 2){bms.readModulesValues(MSG); BMSLastRead = millis();}
     if (settings.CAN_Map[0][CAN_BMC_HV] & 2){CAN_BMC_HV_send(2, MSG);} // Send HV CAN triggered by Inverter
     if (debug_CAN2){CAN_Debug_IN(2, MSG);}
-    if (settings.CAN_Map[0][CAN_BMC_std] & 2) {CAN_TCU_read(MSG);}
-    if (settings.CAN_Map[0][CAN_Charger] & 2) {CAN_Charge_Check(MSG);}
+    if (settings.CAN_Map[0][CAN_BMC_std] & 2){CAN_TCU_read(MSG);}
+    if (settings.CAN_Map[0][CAN_Charger] & 2){CAN_Charge_Check(MSG);}
   }
 }
 
