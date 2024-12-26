@@ -802,6 +802,7 @@ void BMC_Statemachine(byte status){
       set_OUT_States(Out_Cont_Neg);
       set_OUT_States(Out_Gauge);
       DischargeCurrentLimit();
+      ChargeCurrentLimit();
       Warn_Out_handle();
       Balancing(false);
       CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
@@ -821,6 +822,7 @@ void BMC_Statemachine(byte status){
       if (Settings_unsaved){EEPROM.put(0, settings); Settings_unsaved = 0; activeSerial->printf("--Saved--\r\n");}
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on
       Balancing(true);
+      DischargeCurrentLimit();
       ChargeCurrentLimit();
       Warn_Out_handle();
       CAN_Charger_Send(settings.CAN_Map[0][CAN_Charger]);
@@ -2008,11 +2010,11 @@ void ChargeCurrentLimit(){
   if (chargecurrent > 0){
     //Temperature based
     if (WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_ChargeTLow)){
-      tmp_chargecurrent = map(bms.getLowTemperature(), settings.UnderTAlarm, settings.UnderTWarn, 0, settings.ChargerChargeCurrentMax);
+      tmp_chargecurrent = map(bms.getLowTemperature(),settings.ChargeUnderTWarn, settings.ChargeUnderTAlarm, settings.ChargerChargeCurrentMax, 0);
       chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
     }
     if (WarnAlarm_Check(WarnAlarm_Warning, WarnAlarm_ChargeTHigh)){
-      tmp_chargecurrent = map(bms.getHighTemperature(), settings.OverTWarn, settings.OverTAlarm, settings.ChargerChargeCurrentMax, 0);
+      tmp_chargecurrent = map(bms.getHighTemperature(), settings.ChargeOverTWarn, settings.ChargeOverTAlarm, settings.ChargerChargeCurrentMax, 0);
       chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
     }    
     //Voltage based
@@ -2052,7 +2054,7 @@ void ChargeCurrentLimit(){
 void DischargeCurrentLimit(){
   ///Start at no derating///
   discurrent = settings.OverCurrAlarm;
-  u_int16_t tmp_discurrent = 0;
+  uint16_t tmp_discurrent = 0;
 
   //Modifying discharge current//
   if (discurrent > 0){
@@ -2061,6 +2063,10 @@ void DischargeCurrentLimit(){
       tmp_discurrent = map(bms.getHighTemperature(), settings.OverTWarn, settings.OverTAlarm, settings.OverCurrAlarm, 0);
       discurrent = tmp_discurrent < discurrent ? tmp_discurrent : discurrent;
     }
+    if (WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_TLow)){
+      tmp_discurrent = map(bms.getLowTemperature(), settings.UnderTWarn, settings.UnderTAlarm, settings.OverCurrAlarm, 0);
+      discurrent = tmp_discurrent < discurrent ? tmp_discurrent : discurrent;
+    }    
     //Voltage based//
     //if (bms.getLowCellVolt() < (settings.UnderVWarn + settings.DisTaper)){
     if (WarnAlarm_Check(WarnAlarm_Warning, WarnAlarm_VLow)){
