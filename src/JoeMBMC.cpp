@@ -28,7 +28,7 @@
 Stream* activeSerial = &Serial_USB;
 
 /////Version Identifier/////////
-uint32_t firmver = 241202;
+uint32_t firmver = 241228;
 
 BMSManager bms;
 EEPROMSettings settings;
@@ -1999,10 +1999,13 @@ int16_t pgnFromCANId(int16_t canId){ //Parameter Group Number
 }
 
 void ChargeCurrentLimit(){
-  ///Start at no derating///
-  chargecurrent = settings.ChargerChargeCurrentMax;
-  uint16_t EndCurrent = settings.ChargeCurrentEnd / settings.nChargers;
+  int16_t EndCurrent = settings.ChargeCurrentEnd / settings.nChargers;
   uint16_t tmp_chargecurrent = 0;
+  uint16_t ChargeMaxCurrent = 0;
+  ///Start at no derating///
+
+  //select smaller value as max charge current
+  ChargeMaxCurrent = chargecurrent = settings.ChargeOverCurrAlarm < settings.ChargerChargeCurrentMax ? settings.ChargeOverCurrAlarm : settings.ChargerChargeCurrentMax;
 
   if (WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_Vhigh)){ chargecurrent = 0; }
 
@@ -2010,24 +2013,24 @@ void ChargeCurrentLimit(){
   if (chargecurrent > 0){
     //Temperature based
     if (WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_ChargeTLow)){
-      tmp_chargecurrent = map(bms.getLowTemperature(),settings.ChargeUnderTWarn, settings.ChargeUnderTAlarm, settings.ChargerChargeCurrentMax, 0);
+      tmp_chargecurrent = map(bms.getLowTemperature(),settings.ChargeUnderTWarn, settings.ChargeUnderTAlarm, ChargeMaxCurrent, 0);
       chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
     }
     if (WarnAlarm_Check(WarnAlarm_Warning, WarnAlarm_ChargeTHigh)){
-      tmp_chargecurrent = map(bms.getHighTemperature(), settings.ChargeOverTWarn, settings.ChargeOverTAlarm, settings.ChargerChargeCurrentMax, 0);
+      tmp_chargecurrent = map(bms.getHighTemperature(), settings.ChargeOverTWarn, settings.ChargeOverTAlarm, ChargeMaxCurrent, 0);
       chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
     }    
     //Voltage based
     if (storagemode){
       uint16_t upperStoreVLimit = settings.StoreVsetpoint - settings.ChargeHys/2;
       if (bms.getHighCellVolt() > upperStoreVLimit){
-        tmp_chargecurrent = map(bms.getHighCellVolt(), upperStoreVLimit, settings.StoreVsetpoint, settings.ChargerChargeCurrentMax, EndCurrent);
+        tmp_chargecurrent = map(bms.getHighCellVolt(), upperStoreVLimit, settings.StoreVsetpoint, ChargeMaxCurrent, EndCurrent);
         chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
       }
     } else { 
       uint16_t upperVLimit = settings.ChargeVSetpoint - settings.ChargeHys/2; //[ToDo] make derate setpoint configurable?
       if (bms.getHighCellVolt() > upperVLimit){
-        tmp_chargecurrent = map(bms.getHighCellVolt(), upperVLimit, settings.ChargeVSetpoint, settings.ChargerChargeCurrentMax, EndCurrent);
+        tmp_chargecurrent = map(bms.getHighCellVolt(), upperVLimit, settings.ChargeVSetpoint, ChargeMaxCurrent, EndCurrent);
         chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
        }
     }
@@ -2036,7 +2039,7 @@ void ChargeCurrentLimit(){
     //chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
   }   
 
-  // compensate for consumers if Chargecurrent is 0 [ToTest]
+  // compensate for consumers if Chargecurrent is 0
   // [ToDO] smoothing with P/I/D Controller?
   if(chargecurrent == 0 && currentact < 0){
     chargecurrent = chargecurrentlast + (currentact / 100 / settings.nChargers) * -1;
@@ -2046,8 +2049,8 @@ void ChargeCurrentLimit(){
   // multiply with calculated current
   chargecurrentFactor = currentact / chargecurrent;
 
-  chargecurrent = constrain(chargecurrent,0,settings.ChargerChargeCurrentMax); //[ToTest]
-  chargecurrent = constrain(chargecurrent,0,settings.ChargeOverCurrAlarm / settings.nChargers); //[ToTest]
+  chargecurrent = constrain(chargecurrent,0,settings.ChargerChargeCurrentMax);
+  chargecurrent = constrain(chargecurrent,0,settings.ChargeOverCurrAlarm / settings.nChargers);
   chargecurrentlast = chargecurrent;
 }
 
