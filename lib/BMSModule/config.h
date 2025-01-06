@@ -170,7 +170,7 @@ typedef struct {
   uint16_t OverVWarn;            // in mV
   uint16_t UnderVWarn;           // in mV
   uint16_t UnderVAlarm;          // in mV
-  uint16_t DischHys;             // mV Discharge voltage offset [ToDo] not used
+  uint16_t UnderVAlarm_DischHys; // in mV
   uint16_t ChargeVSetpoint;      // in mV
   uint16_t ChargeVsetpoint_toll; // in mV
   uint16_t ChargeHys;            // mV drop required for charger to kick back on

@@ -28,7 +28,9 @@
 Stream* activeSerial = &Serial_USB;
 
 /////Version Identifier/////////
-uint32_t firmver = 241228;
+uint32_t firmver = 250106;
+
+uint32_t Uptime = 0;
 
 BMSManager bms;
 EEPROMSettings settings;
@@ -62,8 +64,6 @@ byte BMC_Stat = 0;
 
 //Serial Menu
 bool menu_load = 0;
-// byte menu_option = 0;
-// byte menu_current = 0;
 
 //Errors
 uint32_t error_timer = 0;
@@ -71,7 +71,6 @@ uint32_t error_timer = 0;
 byte Settings_unsaved = 0;
 
 //variables for output control
-// uint32_t Precharge_Timer;
 uint16_t pwmfreq = 18000;//pwm frequency
 
 uint16_t chargecurrent = 0;       // in 0,1A
@@ -131,8 +130,6 @@ u_int32_t v_CAN_Charger_Active_Timer = 0; // Reset-timer for v_CAN_Charger_Activ
 //variables
 byte storagemode = 0;
 byte precharged = 0;
-// byte Out_Print_ON = 1;
-// byte Modules_Print_ON = 1;
 
 byte output_debug_counter = 0;
 
@@ -242,7 +239,7 @@ void loadDefaultSettings(){
   settings.UnderVWarn = 3200;
   settings.UnderVAlarm = 3000;
   settings.ChargeHys = 100; 
-  settings.DischHys = 200; 
+  settings.UnderVAlarm_DischHys = 200; 
   settings.CellGap = 500; 
   settings.OverTAlarm = 550; // 0.1°C
   settings.OverTWarn = 450; // 0.1°C
@@ -450,8 +447,16 @@ void loop(){
     }
   }
 
+  // 1s loop
+  static uint32_t looptime_1s = 0;
+  if (millis() - looptime_1s > 1000){
+    looptime_1s = millis();
+    Uptime++;
+  }
+
+  // 0.5s loop
   static uint32_t looptime = 0;
-  if (millis() - looptime > 500){ // 0.5s loop
+  if (millis() - looptime > 500){ 
     looptime = millis();
     
     // TCAP is negative. 0 = full, settings.CAP * -1 is empty.
@@ -771,13 +776,17 @@ byte Warn_Out_handle(){
   if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_Dummy)){
     set_OUT_States(Out_Err_Warn);
     set_OUT_States(Out_Warning);
-    if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_THigh) || WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_ChargeTHigh)){
     // high temp -> activate cooling
-      set_OUT_States(Out_Cooling);
+    if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_THigh) || WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_ChargeTHigh)){
+      if(bms.getLowCellVolt() > settings.UnderVAlarm + settings.UnderVAlarm_DischHys){
+        set_OUT_States(Out_Cooling);
+      }
     }
-    if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_TLow) || WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_TLow)){
     // low temp -> activate heating
-      set_OUT_States(Out_Heating);
+    if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_TLow) || WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_ChargeTLow)){
+      if(bms.getLowCellVolt() > settings.UnderVAlarm + settings.UnderVAlarm_DischHys){
+        set_OUT_States(Out_Heating);
+      }
     }
     return 1;
   }
@@ -926,7 +935,8 @@ void Serial_Print(bool Modules_Print){
     case (Stat_Discharge): activeSerial->printf("Discharge"); break; 
   }
   if (Warn_Out_handle()){activeSerial->printf(" (Warning!)\r\n");} else {activeSerial->printf("\r\n");}
-
+  activeSerial->printf("Uptime: %02d:%02d:%02d\r\n",Uptime/3600,(Uptime%3600)/60,Uptime%60);
+  
   activeSerial->printf("\r\nCurrent Limit: Charge %5.2fA (%5.2fA), Factor: %3u% | Discharge %5.2fA \r\n",float(chargecurrent) * settings.nChargers / 10, float(chargecurrent) / 10, chargecurrentFactor, float(discurrent) / 10);
   activeSerial->printf("Vpack: %5.2fV | Vlow: %4umV | Vhigh: %4umV | DeltaV: %4umV | Tlow: %3.1f°C | Thigh: %3.1f°C\r\n",double(bms.getPackVoltage()) / 1000,bms.getLowCellVolt(),bms.getHighCellVolt(),bms.getHighCellVolt() - bms.getLowCellVolt(),float(bms.getLowTemperature()) / 10,float(bms.getHighTemperature()) / 10);
   activeSerial->printf("Cells: %u/%u",bms.getSeriesCells(),settings.Scells * settings.Pstrings);
@@ -1562,30 +1572,30 @@ void Menu(String menu_option_string){
     break;
     case Menu_Battery:
       switch (menu_option){
-        case 1: settings.OverVAlarm = menu_option_val; Menu(); break;
-        case 2: settings.OverVWarn = menu_option_val; Menu(); break;
+        case 1: settings.OverVWarn = menu_option_val; Menu(); break;
+        case 2: settings.OverVAlarm = menu_option_val; Menu(); break;
         case 3: settings.UnderVWarn = menu_option_val; Menu(); break;
         case 4: settings.UnderVAlarm = menu_option_val; Menu(); break;
-        case 5: settings.ChargeVSetpoint = menu_option_val; Menu(); break;
+        case 5: settings.OverTWarn = menu_option_val * 10; Menu(); break;
         case 6: settings.OverTAlarm = menu_option_val * 10; Menu(); break;
-        case 7: settings.OverTWarn = menu_option_val * 10; Menu(); break;
-        case 8: settings.UnderTWarn = menu_option_val * 10; Menu(); break;    
-        case 9: settings.UnderTAlarm = menu_option_val * 10; Menu(); break;
+        case 7: settings.UnderTWarn = menu_option_val * 10; Menu(); break;    
+        case 8: settings.UnderTAlarm = menu_option_val * 10; Menu(); break;
+        case 9: settings.ChargeOverTWarn = menu_option_val * 10; Menu(); break;
         case 10: settings.ChargeOverTAlarm = menu_option_val * 10; Menu(); break;
-        case 11: settings.ChargeOverTWarn = menu_option_val * 10; Menu(); break;
-        case 12: settings.ChargeUnderTWarn = menu_option_val * 10; Menu(); break;    
-        case 13: settings.ChargeUnderTAlarm = menu_option_val * 10; Menu(); break;            
-        case 14: settings.balanceVoltage = menu_option_val; Menu(); break;   
-        case 15: settings.balanceHyst = menu_option_val; Menu(); break; 
-        case 16: settings.CellGap = menu_option_val; Menu(); break;  
-        case 17: settings.designCAP = menu_option_val; Menu(); break;
-        case 18: settings.CAP = menu_option_val; Menu(); break;
-        case 19: settings.Pstrings = menu_option_val; Menu(); break;     
-        case 20: settings.Scells = menu_option_val; Menu(); break;  
-        case 21: settings.ChargeOverCurrAlarm = menu_option_val * 10; Menu(); break;
-        case 22: settings.ChargeOverCurrWarn = menu_option_val * 10; Menu(); break;
-        case 23: settings.OverCurrAlarm = menu_option_val * 10; Menu(); break;
-        case 24: settings.OverCurrWarn = menu_option_val * 10; Menu(); break;
+        case 11: settings.ChargeUnderTWarn = menu_option_val * 10; Menu(); break;    
+        case 12: settings.ChargeUnderTAlarm = menu_option_val * 10; Menu(); break;            
+        case 13: settings.OverCurrWarn = menu_option_val * 10; Menu(); break;
+        case 14: settings.OverCurrAlarm = menu_option_val * 10; Menu(); break;
+        case 15: settings.ChargeOverCurrWarn = menu_option_val * 10; Menu(); break;
+        case 16: settings.ChargeOverCurrAlarm = menu_option_val * 10; Menu(); break;
+        case 17: settings.CellGap = menu_option_val; Menu(); break;  
+        case 18: settings.ChargeVSetpoint = menu_option_val; Menu(); break;
+        case 19: settings.balanceVoltage = menu_option_val; Menu(); break;   
+        case 20: settings.balanceHyst = menu_option_val; Menu(); break; 
+        case 21: settings.designCAP = menu_option_val; Menu(); break;
+        case 22: settings.CAP = menu_option_val; Menu(); break;
+        case 23: settings.Pstrings = menu_option_val; Menu(); break;     
+        case 24: settings.Scells = menu_option_val; Menu(); break;  
         case 25: settings.socvolt[0] = menu_option_val; Menu(); break;  
         case 26: settings.socvolt[1] = menu_option_val; Menu(); break; 
         case 27: settings.socvolt[2] = menu_option_val; Menu(); break;                                                               
@@ -1606,33 +1616,27 @@ void Menu(String menu_option_string){
           Serial_clear();
           activeSerial->printf("Battery\r\n");
           activeSerial->printf("--------------------\r\n\r\n");
-          activeSerial->printf("Cell limits:\r\n");    
-          activeSerial->printf("[1] Cell Overvoltage Alarm (mV):            %4i\r\n",settings.OverVAlarm);
-          activeSerial->printf("[2] Cell Overvoltage Warning (mV):          %4i\r\n",settings.OverVWarn); //
-          activeSerial->printf("[3] Cell Undervoltage Warning (mV):         %4i\r\n",settings.UnderVWarn);  //   
-          activeSerial->printf("[4] Cell Undervoltage Alarm (mV):           %4i\r\n",settings.UnderVAlarm); //
-          activeSerial->printf("[5] Charge Voltage Setpoint (mV):           %4i\r\n",settings.ChargeVSetpoint); //
-          activeSerial->printf("[6] Over Temperature Alarm (°C):            %4i\r\n",settings.OverTAlarm / 10);
-          activeSerial->printf("[7] Over Temperature Warning (°C):          %4i\r\n",settings.OverTWarn / 10);
-          activeSerial->printf("[8] Under Temperature Warning (°C):         %4i\r\n",settings.UnderTWarn / 10);
-          activeSerial->printf("[9] Under Temperature Alarm (°C):           %4i\r\n",settings.UnderTAlarm / 10);
-          activeSerial->printf("[10] Charge Over Temperature Alarm (°C):    %4i\r\n",settings.ChargeOverTAlarm / 10);
-          activeSerial->printf("[11] Charge Over Temperature Warning (°C):  %4i\r\n",settings.ChargeOverTWarn / 10);
-          activeSerial->printf("[12] Charge Under Temperature Warning (°C): %4i\r\n",settings.ChargeUnderTWarn / 10);
-          activeSerial->printf("[13] Charge Under Temperature Alarm (°C):   %4i\r\n",settings.ChargeUnderTAlarm / 10);
-          activeSerial->printf("[14] Cell Balance Voltage (mV):             %4i\r\n",settings.balanceVoltage);
-          activeSerial->printf("[15] Balance Hysteresis (mV):               %4i\r\n",settings.balanceHyst);
-          activeSerial->printf("[16] Cell Delta Voltage Alarm (mV):         %4i\r\n",settings.CellGap);
+          activeSerial->printf("Cell limits:                        Warning         Alarm\r\n");    
+          activeSerial->printf("Cell Overvoltage (mV):           [1]   %4i    [2]   %4i\r\n",settings.OverVWarn, settings.OverVAlarm);
+          activeSerial->printf("Cell Undervoltage (mV):          [3]   %4i    [4]   %4i\r\n",settings.UnderVWarn, settings.UnderVAlarm);  //                     
+          activeSerial->printf("Over Temperature (°C):           [5]   %4i    [6]   %4i\r\n",settings.OverTWarn / 10, settings.OverTAlarm / 10);
+          activeSerial->printf("Under Temperature (°C):          [7]   %4i    [8]   %4i\r\n",settings.UnderTWarn / 10, settings.UnderTAlarm / 10);
+          activeSerial->printf("Charge Over Temperature (°C):    [9]   %4i   [10]   %4i\r\n",settings.ChargeOverTWarn / 10, settings.ChargeOverTAlarm / 10);
+          activeSerial->printf("Charge Under Temperature (°C):  [11]   %4i   [12]   %4i\r\n",settings.ChargeUnderTWarn / 10, settings.ChargeUnderTAlarm / 10);
+          activeSerial->printf("Discharge Current (A):          [13]   %4i   [14]   %4i\r\n",settings.OverCurrWarn / 10, settings.OverCurrAlarm / 10);
+          activeSerial->printf("Charge Current (A):             [15]   %4i   [16]   %4i\r\n",settings.ChargeOverCurrWarn / 10, settings.ChargeOverCurrAlarm / 10);
+          activeSerial->printf("Cell Delta Voltage (mV):                      [17]   %4i\r\n",settings.CellGap);
+          activeSerial->printf("\r\n");
+          activeSerial->printf("[18] Charge Voltage Setpoint (mV):          %4i\r\n",settings.ChargeVSetpoint); //
+          activeSerial->printf("[19] Cell Balance Voltage (mV):             %4i\r\n",settings.balanceVoltage);
+          activeSerial->printf("[20] Balance Hysteresis (mV):               %4i\r\n",settings.balanceHyst);
+          
           activeSerial->printf("\r\n");
           activeSerial->printf("Pack configuration:\r\n");         
-          activeSerial->printf("[17] Design Capacity (Ah):          %4i\r\n",settings.designCAP);
-          activeSerial->printf("[18] Current Capacity (Ah):         %4i\r\n",settings.CAP); 
-          activeSerial->printf("[19] Cells in Parallel:             %4i\r\n",settings.Pstrings);
-          activeSerial->printf("[20] Cells in Series:               %4i\r\n",settings.Scells );
-          activeSerial->printf("[21] Charge Current Alarm (A):      %4i\r\n",settings.ChargeOverCurrAlarm / 10);
-          activeSerial->printf("[22] Charge Current Warning (A):    %4i\r\n",settings.ChargeOverCurrWarn / 10);          
-          activeSerial->printf("[23] Discharge Current Alarm (A):   %4i\r\n",settings.OverCurrAlarm / 10);
-          activeSerial->printf("[24] Discharge Current Warning (A): %4i\r\n",settings.OverCurrWarn / 10);
+          activeSerial->printf("[21] Design Capacity (Ah):          %4i\r\n",settings.designCAP);
+          activeSerial->printf("[22] Current Capacity (Ah):         %4i\r\n",settings.CAP); 
+          activeSerial->printf("[23] Cells in Parallel:             %4i\r\n",settings.Pstrings);
+          activeSerial->printf("[24] Cells in Series:               %4i\r\n",settings.Scells );
           activeSerial->printf("\r\n");
           activeSerial->printf("Voltage based SOC:\r\n");
           activeSerial->printf("[25] Setpoint1 (mV):        %4i\r\n",settings.socvolt[0]);
@@ -1837,6 +1841,7 @@ void Menu(String menu_option_string){
         case 1: settings.error_delay = menu_option_val; Menu(); break;
         case 2: settings.Warning_Blink_Hz = menu_option_val; Menu(); break;
         case 3: settings.Error_Blink_Hz = menu_option_val; Menu(); break;
+        case 4: settings.UnderVAlarm_DischHys = menu_option_val; Menu(); break;
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
@@ -1845,6 +1850,7 @@ void Menu(String menu_option_string){
           activeSerial->printf("[1] Error Delay (ms):             %5i\r\n",settings.error_delay);
           activeSerial->printf("[2] Warning blink (Hz):           %5i\r\n",settings.Warning_Blink_Hz);
           activeSerial->printf("[3] Error blink (Hz):             %5i\r\n",settings.Error_Blink_Hz);
+          activeSerial->printf("[4] UnderV Discharge Hysteresis   %5i\r\n",settings.UnderVAlarm_DischHys);
           activeSerial->printf("\r\n");        
           activeSerial->printf("[q] Quit\r\n");          
       }
