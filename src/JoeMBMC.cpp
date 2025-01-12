@@ -28,7 +28,7 @@
 Stream* activeSerial = &Serial_USB;
 
 /////Version Identifier/////////
-uint32_t firmver = 250106;
+uint32_t firmver = 250112;
 
 uint32_t Uptime = 0;
 
@@ -102,27 +102,24 @@ uint32_t BMSLastRead = 0; // [ToDo] not used
 uint16_t Sen_AnalogueRawValue;
 int32_t currentact = 0; // mA
 int32_t currentlast = 0; // mA
-//int32_t currentavg = 0; // mA
-// byte currentavg_counter = 0;
 int32_t RawCur;
 int32_t mampsecond = 0; // Range 0 = full to settings.cap * -1 = empty
 volatile int32_t mampsecondTimer = 0;
-// uint32_t lastTime;
-// uint32_t looptime, looptime1, UnderTime, cleartime, baltimer = 0; //ms
 byte Sen_Analogue_active_Nr = 1; // active analogue sensor: 1 = Sensor 1; 2 = Sensor 2
 int16_t TCAP = 0; //Temperature corrected Capacity in Ah including settings.Pstrings!
 int16_t TCAP_Wh = 0;
 //Variables for SOC calc
 byte SOC = 100; //State of Charge
-byte SOCset = 0;
 
-//charger variables
-byte maxac1 = 16; //Shore power 16A per charger
-byte maxac2 = 10; //Generator Charging
+//charger variables Prusa
+byte maxac1 = 16; //Shore power 16A per charger; only used for prusa charger
+byte maxac2 = 10; //Generator Charging; only used for prusa charger
 const int16_t chargerid1 = 0x618; //bulk chargers (brusa)
 const int16_t chargerid2 = 0x638; //finishing charger (brusa)
 uint16_t chargerendbulk = 0; //mV before Charge Voltage to turn off the bulk charger/s
 uint16_t chargerend = 0; //mV before Charge Voltage to turn off the finishing charger/s
+
+
 bool v_CAN_Charger_Active = false; // global variable for CAN-Based chargers
 u_int32_t v_CAN_Charger_Active_Timer = 0; // Reset-timer for v_CAN_Charger_Active
 
@@ -959,7 +956,7 @@ void Serial_Print(bool Modules_Print){
     {activeSerial->printf("(A Single): ");}
   if (settings.CurSenType == Sen_Canbus)
     {activeSerial->printf("(CAN): ");}
-  activeSerial->printf("%6imA\r\n",currentact);
+  activeSerial->printf("%6imA, %6imW\r\n",currentact, currentact * bms.getPackVoltage() / 1000);
   activeSerial->printf("SOC:       %3u%%  (%.2fmAh)\r\n",SOC,double(mampsecond) / 3600);
   activeSerial->printf("SOH:       %3u%%  (%u/%uAh)\r\n",SOH_calc(),settings.CAP,settings.designCAP);
   activeSerial->printf("TCap:      %3uAh (%uWh)\r\n",abs(TCAP),abs(TCAP_Wh));
@@ -1192,6 +1189,7 @@ uint16_t SOH_calc(){
 }
 
 void SOC_update(){
+  static byte SOCset = 0;
   int16_t SOC_tmp = 0;
   bool SOC_restored = false;
 
