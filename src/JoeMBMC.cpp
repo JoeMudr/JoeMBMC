@@ -28,7 +28,7 @@
 Stream* activeSerial = &Serial_USB;
 
 /////Version Identifier/////////
-uint32_t firmver = 250112;
+uint32_t firmver = 250131;
 
 uint32_t Uptime = 0;
 
