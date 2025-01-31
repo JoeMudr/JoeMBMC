@@ -2003,8 +2003,8 @@ int16_t pgnFromCANId(int16_t canId){ //Parameter Group Number
 }
 
 void ChargeCurrentLimit(){
-  int16_t EndCurrent = settings.ChargeCurrentEnd / settings.nChargers;
-  uint16_t tmp_chargecurrent = 0;
+  uint16_t EndCurrent = settings.ChargeCurrentEnd / settings.nChargers;
+  int16_t tmp_chargecurrent = 0; // can get negative by mapping
   uint16_t ChargeMaxCurrent = 0;
   ///Start at no derating///
 
@@ -2018,10 +2018,12 @@ void ChargeCurrentLimit(){
     //Temperature based
     if (WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_ChargeTLow)){
       tmp_chargecurrent = map(bms.getLowTemperature(),settings.ChargeUnderTWarn, settings.ChargeUnderTAlarm, ChargeMaxCurrent, 0);
+      tmp_chargecurrent = constrain(tmp_chargecurrent,0,ChargeMaxCurrent);
       chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
     }
     if (WarnAlarm_Check(WarnAlarm_Warning, WarnAlarm_ChargeTHigh)){
       tmp_chargecurrent = map(bms.getHighTemperature(), settings.ChargeOverTWarn, settings.ChargeOverTAlarm, ChargeMaxCurrent, 0);
+      tmp_chargecurrent = constrain(tmp_chargecurrent,0,ChargeMaxCurrent);
       chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
     }    
     //Voltage based
@@ -2029,14 +2031,16 @@ void ChargeCurrentLimit(){
       uint16_t upperStoreVLimit = settings.StoreVsetpoint - settings.ChargeHys/2;
       if (bms.getHighCellVolt() > upperStoreVLimit){
         tmp_chargecurrent = map(bms.getHighCellVolt(), upperStoreVLimit, settings.StoreVsetpoint, ChargeMaxCurrent, EndCurrent);
+        tmp_chargecurrent = constrain(tmp_chargecurrent,0,ChargeMaxCurrent);
         chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
       }
     } else { 
       uint16_t upperVLimit = settings.ChargeVSetpoint - settings.ChargeHys/2; //[ToDo] make derate setpoint configurable?
       if (bms.getHighCellVolt() > upperVLimit){
         tmp_chargecurrent = map(bms.getHighCellVolt(), upperVLimit, settings.ChargeVSetpoint, ChargeMaxCurrent, EndCurrent);
+        tmp_chargecurrent = constrain(tmp_chargecurrent,0,ChargeMaxCurrent);
         chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
-       }
+       }      
     }
     // 16A Limit
     //tmp_chargecurrent = 3600 / (round(double(bms.getPackVoltage()) / 1000)) * 95 / 10; //3,6kW max, 95% Eff. , factor 10 [ToDo] make conf. + CAN
@@ -2052,32 +2056,32 @@ void ChargeCurrentLimit(){
   // [ToDo] implement feedback loop
   // multiply with calculated current
   chargecurrentFactor = currentact / chargecurrent;
-
-  chargecurrent = constrain(chargecurrent,0,settings.ChargerChargeCurrentMax);
-  chargecurrent = constrain(chargecurrent,0,settings.ChargeOverCurrAlarm / settings.nChargers);
   chargecurrentlast = chargecurrent;
 }
 
 void DischargeCurrentLimit(){
   ///Start at no derating///
   discurrent = settings.OverCurrAlarm;
-  uint16_t tmp_discurrent = 0;
+  int16_t tmp_discurrent = 0; // can get nagative bei mapping
 
   //Modifying discharge current//
   if (discurrent > 0){
     //Temperature based//
     if (WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_THigh)){
       tmp_discurrent = map(bms.getHighTemperature(), settings.OverTWarn, settings.OverTAlarm, settings.OverCurrAlarm, 0);
+      tmp_discurrent = constrain(tmp_discurrent,0,settings.OverCurrAlarm);
       discurrent = tmp_discurrent < discurrent ? tmp_discurrent : discurrent;
     }
     if (WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_TLow)){
       tmp_discurrent = map(bms.getLowTemperature(), settings.UnderTWarn, settings.UnderTAlarm, settings.OverCurrAlarm, 0);
+      tmp_discurrent = constrain(tmp_discurrent,0,settings.OverCurrAlarm);
       discurrent = tmp_discurrent < discurrent ? tmp_discurrent : discurrent;
     }    
     //Voltage based//
     //if (bms.getLowCellVolt() < (settings.UnderVWarn + settings.DisTaper)){
     if (WarnAlarm_Check(WarnAlarm_Warning, WarnAlarm_VLow)){
       tmp_discurrent = map(bms.getLowCellVolt(), settings.UnderVWarn, settings.UnderVAlarm, settings.OverCurrAlarm, 0);
+      tmp_discurrent = constrain(tmp_discurrent,0,settings.OverCurrAlarm);
       discurrent = tmp_discurrent < discurrent ? tmp_discurrent : discurrent;
     }
   }
