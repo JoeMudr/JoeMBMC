@@ -725,7 +725,7 @@ byte ESS_CondCheck(byte tmp_status){
 /*
   if (digitalRead(IN1_Key) == HIGH) {}
 */
-  if(precharged && currentact > 0){tmp_status = Stat_Charge;}
+  if(precharged && currentact > 0 && bms.getHighCellVolt() < (settings.ChargeVSetpoint - settings.ChargeHys)){tmp_status = Stat_Charge;}
   if(precharged && currentact < 0){tmp_status = Stat_Discharge;}
 
   //if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)) {SOC_charged();}
@@ -2045,7 +2045,7 @@ void ChargeCurrentLimit(){
       uint16_t upperStoreVLimit = settings.StoreVsetpoint - settings.ChargeHys/2;
       if (bms.getHighCellVolt() > upperStoreVLimit){
         uint16_t tmp_Vdiff = 0;
-        if(settings.StoreVsetpoint - bms.getHighCellVolt() < 0){chargecurrent = 0;} // 0A if highest cell is above Store setpoint
+        if((settings.StoreVsetpoint - bms.getHighCellVolt() < 0) || BMC_Stat == Stat_Charged){chargecurrent = 0;} // 0A if highest cell is above Store setpoint or charged
         else {tmp_Vdiff = settings.StoreVsetpoint - bms.getHighCellVolt();}
         tmp_chargecurrent = (ChargeMaxCurrent * (tmp_Vdiff*tmp_Vdiff)/((settings.ChargeHys/2)*(settings.ChargeHys/2))) + EndCurrent;
         // Old linear derating
@@ -2059,7 +2059,7 @@ void ChargeCurrentLimit(){
         // Old linear derating
         //tmp_chargecurrent = map(bms.getHighCellVolt(), upperVLimit, settings.ChargeVSetpoint, ChargeMaxCurrent, EndCurrent);
         uint16_t tmp_Vdiff = 0;
-        if(settings.ChargeVSetpoint - bms.getHighCellVolt() < 0){chargecurrent = 0;} // 0A if highest cell is above Charge setpoint
+        if((settings.ChargeVSetpoint - bms.getHighCellVolt() < 0) || BMC_Stat == Stat_Charged){chargecurrent = 0;} // 0A if highest cell is above Charge setpoint or charged
         else {tmp_Vdiff = settings.ChargeVSetpoint - bms.getHighCellVolt();}
         tmp_chargecurrent = (ChargeMaxCurrent * (tmp_Vdiff*tmp_Vdiff)/((settings.ChargeHys/2)*(settings.ChargeHys/2))) + EndCurrent;
         tmp_chargecurrent = constrain(tmp_chargecurrent,0,ChargeMaxCurrent);
