@@ -688,7 +688,7 @@ byte Vehicle_CondCheck(byte tmp_status){
       tmp_status = Stat_Charged;
     }
 
-    // Set charged when not charging and Voltage is above Charge Voltage - ChargeHyst.
+    // Set charged Voltage is above Charge Voltage - ChargeHyst.
     if (bms.getHighCellVolt() > (settings.ChargeVSetpoint - settings.ChargeHys) && tmp_status != Stat_Charge){
       tmp_status = Stat_Charged;
     }    
@@ -725,20 +725,22 @@ byte ESS_CondCheck(byte tmp_status){
 /*
   if (digitalRead(IN1_Key) == HIGH) {}
 */
-  if(precharged && currentact > 0 && bms.getHighCellVolt() < (settings.ChargeVSetpoint - settings.ChargeHys)){tmp_status = Stat_Charge;}
   if(precharged && currentact < 0){tmp_status = Stat_Discharge;}
 
-  //if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)) {SOC_charged();}
-
   //start charging when Voltage is below Charge Voltage - ChargeHyst.
-  if (bms.getHighCellVolt() < (settings.ChargeVSetpoint - settings.ChargeHys)){ 
-    if (precharged || settings.ChargerDirect){tmp_status = Stat_Charge;}
-    else {tmp_status = Stat_Precharge;}      
+  if (precharged && (bms.getHighCellVolt() < (settings.ChargeVSetpoint - settings.ChargeHys))){ 
+    tmp_status = Stat_Charge;
   }
+
   //Set 100% when Voltage gets above Charge Voltage 
   //Set charged when Voltage gets above Charge Voltage
   if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)){
     SOC_charged();
+    tmp_status = Stat_Charged;
+  }  
+
+  // Set charged when Voltage is above Charge Voltage - ChargeHyst.
+  if (bms.getHighCellVolt() > (settings.ChargeVSetpoint - settings.ChargeHys) && tmp_status != Stat_Charge){
     tmp_status = Stat_Charged;
   }  
 
