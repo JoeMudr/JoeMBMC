@@ -74,7 +74,6 @@ byte Settings_unsaved = 0;
 uint16_t pwmfreq = 18000;//pwm frequency
 
 uint16_t chargecurrent = 0;       // in 0,1A
-uint16_t chargecurrentlast = 0;   // in 0,1A
 uint16_t chargecurrentFactor = 0; // in%, correction factor, when using multiple chargers
 uint16_t discurrent = 0;          // in 0,1A
 
@@ -729,7 +728,19 @@ byte ESS_CondCheck(byte tmp_status){
   if(precharged && currentact > 0){tmp_status = Stat_Charge;}
   if(precharged && currentact < 0){tmp_status = Stat_Discharge;}
 
-  if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)) {SOC_charged();}
+  //if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)) {SOC_charged();}
+
+  //start charging when Voltage is below Charge Voltage - ChargeHyst.
+  if (bms.getHighCellVolt() < (settings.ChargeVSetpoint - settings.ChargeHys)){ 
+    if (precharged || settings.ChargerDirect){tmp_status = Stat_Charge;}
+    else {tmp_status = Stat_Precharge;}      
+  }
+  //Set 100% when Voltage gets above Charge Voltage 
+  //Set charged when Voltage gets above Charge Voltage
+  if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)){
+    SOC_charged();
+    tmp_status = Stat_Charged;
+  }  
 
   // Set Error depending on Error conditions
   if (WarnAlarm_Check(WarnAlarm_Alarm, WarnAlarm_Vhigh) || 
@@ -840,7 +851,7 @@ void BMC_Statemachine(byte status){
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
       //if (digitalRead(IN1_Key) == HIGH){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);} //[ToDo] Why?
       Balancing(true);
-      chargecurrentlast = 0;
+      ChargeCurrentLimit();
       Warn_Out_handle();
       CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
@@ -2008,6 +2019,7 @@ void ChargeCurrentLimit(){
   uint16_t EndCurrent = settings.ChargeCurrentEnd / settings.nChargers;
   int16_t tmp_chargecurrent = 0; // can get negative by mapping
   uint16_t ChargeMaxCurrent = 0;
+  static uint16_t chargecurrentlast = 0;   // in 0,1A
   ///Start at no derating///
 
   //select smaller value as max charge current
