@@ -718,31 +718,35 @@ byte Vehicle_CondCheck(byte tmp_status){
 byte ESS_CondCheck(byte tmp_status){
 
   // Precharge first
-  if (precharged){tmp_status = Stat_Idle;}
+  if (precharged){
+    tmp_status = Stat_Idle;
+
+    if(currentact < 0){tmp_status = Stat_Discharge;}
+
+    //start charging when Voltage is below Charge Voltage - ChargeHyst.
+    if (bms.getHighCellVolt() < (settings.ChargeVSetpoint - settings.ChargeHys) && currentact > 0){ 
+      tmp_status = Stat_Charge;
+    }
+
+    //Set 100% when Voltage gets above Charge Voltage 
+    //Set charged when Voltage gets above Charge Voltage
+    if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)){
+      SOC_charged();
+      tmp_status = Stat_Charged;
+    }  
+
+    // Set charged when Voltage is above Charge Voltage - ChargeHyst.
+    if (bms.getHighCellVolt() > (settings.ChargeVSetpoint - settings.ChargeHys) && tmp_status != Stat_Charge && currentact > 0){
+      tmp_status = Stat_Charged;
+    }  
+  }
   else {tmp_status = Stat_Precharge;}  
 
 //[ToDo] storagemode?
 /*
   if (digitalRead(IN1_Key) == HIGH) {}
 */
-  if(precharged && currentact < 0){tmp_status = Stat_Discharge;}
 
-  //start charging when Voltage is below Charge Voltage - ChargeHyst.
-  if (precharged && (bms.getHighCellVolt() < (settings.ChargeVSetpoint - settings.ChargeHys))){ 
-    tmp_status = Stat_Charge;
-  }
-
-  //Set 100% when Voltage gets above Charge Voltage 
-  //Set charged when Voltage gets above Charge Voltage
-  if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)){
-    SOC_charged();
-    tmp_status = Stat_Charged;
-  }  
-
-  // Set charged when Voltage is above Charge Voltage - ChargeHyst.
-  if (bms.getHighCellVolt() > (settings.ChargeVSetpoint - settings.ChargeHys) && tmp_status != Stat_Charge){
-    tmp_status = Stat_Charged;
-  }  
 
   // Set Error depending on Error conditions
   if (WarnAlarm_Check(WarnAlarm_Alarm, WarnAlarm_Vhigh) || 
@@ -850,9 +854,17 @@ void BMC_Statemachine(byte status){
     break;
     case Stat_Charged:
       set_OUT_States(); // all off
-      if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on    
-      //if (digitalRead(IN1_Key) == HIGH){CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);} //[ToDo] Why?
+      // enable gauge if key is on    
+      if (digitalRead(IN1_Key) == HIGH){
+        set_OUT_States(Out_Gauge);
+        }
+      // leave contactors on in ESS mode
+      if (settings.ESSmode){
+        set_OUT_States(Out_Cont_Neg);
+        set_OUT_States(Out_Cont_Pos);   
+      }
       Balancing(true);
+      DischargeCurrentLimit();
       ChargeCurrentLimit();
       Warn_Out_handle();
       CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
