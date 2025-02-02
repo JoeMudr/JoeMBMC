@@ -2032,14 +2032,24 @@ void ChargeCurrentLimit(){
     if (storagemode){
       uint16_t upperStoreVLimit = settings.StoreVsetpoint - settings.ChargeHys/2;
       if (bms.getHighCellVolt() > upperStoreVLimit){
-        tmp_chargecurrent = map(bms.getHighCellVolt(), upperStoreVLimit, settings.StoreVsetpoint, ChargeMaxCurrent, EndCurrent);
+        uint16_t tmp_Vdiff = 0;
+        if(settings.StoreVsetpoint - bms.getHighCellVolt() < 0){chargecurrent = 0;} // 0A if highest cell is above Store setpoint
+        else {tmp_Vdiff = settings.StoreVsetpoint - bms.getHighCellVolt();}
+        tmp_chargecurrent = (ChargeMaxCurrent * (tmp_Vdiff*tmp_Vdiff)/((settings.ChargeHys/2)*(settings.ChargeHys/2))) + EndCurrent;
+        // Old linear derating
+        //tmp_chargecurrent = map(bms.getHighCellVolt(), upperStoreVLimit, settings.StoreVsetpoint, ChargeMaxCurrent, EndCurrent);
         tmp_chargecurrent = constrain(tmp_chargecurrent,0,ChargeMaxCurrent);
         chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
       }
     } else { 
       uint16_t upperVLimit = settings.ChargeVSetpoint - settings.ChargeHys/2; //[ToDo] make derate setpoint configurable?
       if (bms.getHighCellVolt() > upperVLimit){
-        tmp_chargecurrent = map(bms.getHighCellVolt(), upperVLimit, settings.ChargeVSetpoint, ChargeMaxCurrent, EndCurrent);
+        // Old linear derating
+        //tmp_chargecurrent = map(bms.getHighCellVolt(), upperVLimit, settings.ChargeVSetpoint, ChargeMaxCurrent, EndCurrent);
+        uint16_t tmp_Vdiff = 0;
+        if(settings.ChargeVSetpoint - bms.getHighCellVolt() < 0){chargecurrent = 0;} // 0A if highest cell is above Charge setpoint
+        else {tmp_Vdiff = settings.ChargeVSetpoint - bms.getHighCellVolt();}
+        tmp_chargecurrent = (ChargeMaxCurrent * (tmp_Vdiff*tmp_Vdiff)/((settings.ChargeHys/2)*(settings.ChargeHys/2))) + EndCurrent;
         tmp_chargecurrent = constrain(tmp_chargecurrent,0,ChargeMaxCurrent);
         chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
        }      
