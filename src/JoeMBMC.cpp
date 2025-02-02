@@ -24,7 +24,6 @@
 #include <ADC.h>          //https://github.com/pedvide/ADC
 #include <Filters.h>      //https://github.com/JonHub/Filters
 #include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
-#include <csv.cpp>
 
 Stream* activeSerial = &Serial_USB;
 
