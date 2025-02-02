@@ -24,11 +24,12 @@
 #include <ADC.h>          //https://github.com/pedvide/ADC
 #include <Filters.h>      //https://github.com/JonHub/Filters
 #include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
+#include <csv.cpp>
 
 Stream* activeSerial = &Serial_USB;
 
 /////Version Identifier/////////
-uint32_t firmver = 250131;
+uint32_t firmver = 250201;
 
 uint32_t Uptime = 0;
 
@@ -801,6 +802,7 @@ void BMC_Statemachine(byte status){
       set_OUT_States(); // all off
       Balancing(true);
       Warn_Out_handle();
+      CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
     case Stat_Drive:
       set_OUT_States(); // all off
@@ -841,6 +843,7 @@ void BMC_Statemachine(byte status){
       Balancing(true);
       chargecurrentlast = 0;
       Warn_Out_handle();
+      CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
     case Stat_Error:
       if (!error_timer){ error_timer = millis() + settings.error_delay; }// delay before turning everything off
@@ -855,6 +858,7 @@ void BMC_Statemachine(byte status){
         discurrent = 0;
         chargecurrent = 0;
       }
+      CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
     case Stat_Idle:
       set_OUT_States(); // all off
@@ -1646,8 +1650,7 @@ void Menu(String menu_option_string){
           activeSerial->printf("Temperature based SOC Adjustment:\r\n");
           for (byte i = 0; i < 5; i++){
             byte y = i*2;
-            activeSerial->printf("[%i] T%i(°C): %3i\r\n",30+y,i+1,settings.Temp_CAP_Map[0][i]/10);
-            activeSerial->printf("[%i] C%i (%%): %3i\r\n",31+y,i+1,settings.Temp_CAP_Map[1][i]);
+            activeSerial->printf("[%i] %3i°C [%i] %3i%%\r\n",30+y,settings.Temp_CAP_Map[0][i]/10,31+y,settings.Temp_CAP_Map[1][i]);
           }
           activeSerial->printf("\r\n");                    
           activeSerial->printf("[q] Quit\r\n");          
