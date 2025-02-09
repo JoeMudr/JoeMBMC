@@ -28,7 +28,7 @@
 Stream* activeSerial = &Serial_USB;
 
 /////Version Identifier/////////
-uint32_t firmver = 250202;
+uint32_t firmver = 250208;
 
 uint32_t Uptime = 0;
 
@@ -716,29 +716,34 @@ byte Vehicle_CondCheck(byte tmp_status){
 }
 
 byte ESS_CondCheck(byte tmp_status){
-
+  //byte tmp_status = 0;
+  static byte hyst_cleared = true;
   // Precharge first
   if (precharged){
     tmp_status = Stat_Idle;
 
-    if(currentact < 0){tmp_status = Stat_Discharge;}
+    if(currentact < 0 && hyst_cleared){tmp_status = Stat_Discharge;}
 
     //start charging when Voltage is below Charge Voltage - ChargeHyst.
-    if (bms.getHighCellVolt() < (settings.ChargeVSetpoint - settings.ChargeHys) && currentact > 0){ 
+    if (bms.getHighCellVolt() < settings.ChargeVSetpoint && currentact > 0 && hyst_cleared){ 
       tmp_status = Stat_Charge;
     }
 
-    //Set 100% when Voltage gets above Charge Voltage 
-    //Set charged when Voltage gets above Charge Voltage
+    //Set SOC 100% / charged when Voltage gets above Charge Voltage 
     if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)){
       SOC_charged();
       tmp_status = Stat_Charged;
+      hyst_cleared = false;
     }  
 
-    // Set charged when Voltage is above Charge Voltage - ChargeHyst.
-    if (bms.getHighCellVolt() > (settings.ChargeVSetpoint - settings.ChargeHys) && tmp_status != Stat_Charge && currentact > 0){
-      tmp_status = Stat_Charged;
+    // clear hysterese when voltage is below Charge Voltage - ChargeHyst.
+     if (bms.getHighCellVolt() < (settings.ChargeVSetpoint - settings.ChargeHys) && !hyst_cleared){
+      hyst_cleared = true;
     }  
+
+    if(!hyst_cleared){
+      tmp_status = Stat_Charged;
+    }
   }
   else {tmp_status = Stat_Precharge;}  
 
@@ -865,7 +870,8 @@ void BMC_Statemachine(byte status){
       }
       Balancing(true);
       DischargeCurrentLimit();
-      ChargeCurrentLimit();
+      //ChargeCurrentLimit();
+      chargecurrent = 0;
       Warn_Out_handle();
       CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
@@ -1462,7 +1468,7 @@ void Prechargecon(){
   static uint32_t Precharge_Timer;
   if (!Precharge_Timer){Precharge_Timer = millis();}
   Out_States[0][Out_Cont_Neg] = 1;    
-  if (Precharge_Timer + settings.PreTime > millis()){ //  Add later (|| currentact < settings.PreCurrent)
+  if (Precharge_Timer + settings.PreTime > millis()){ // [ToDo] Add later (|| currentact < settings.PreCurrent)
     Out_States[0][Out_Cont_Precharge] = 1; 
     precharged = 0;
   }else{ 
@@ -1891,7 +1897,8 @@ void Menu(String menu_option_string){
         case 2: 
           settings.IgnoreVolt = menu_option_val; 
           BMSInit(); // reset BMS with new Settings
-          Menu(); break;       
+          Menu(); 
+        break;       
         case Menu_Quit: menu_current = Menu_Start; Menu(); break;
         default:
           Serial_clear();
@@ -2033,7 +2040,8 @@ void ChargeCurrentLimit(){
   uint16_t EndCurrent = settings.ChargeCurrentEnd / settings.nChargers;
   int16_t tmp_chargecurrent = 0; // can get negative by mapping
   uint16_t ChargeMaxCurrent = 0;
-  static uint16_t chargecurrentlast = 0;   // in 0,1A
+  static uint16_t chargecurrentlast = 0;   // in 0,1A#
+  uint32_t chargecurrent_Timer = 0;
   ///Start at no derating///
 
   //select smaller value as max charge current
@@ -2056,26 +2064,26 @@ void ChargeCurrentLimit(){
     }    
     //Voltage based
     if (storagemode){
-      uint16_t upperStoreVLimit = settings.StoreVsetpoint - settings.ChargeHys/2;
+      uint16_t upperStoreVLimit = settings.StoreVsetpoint - settings.ChargeHys;
       if (bms.getHighCellVolt() > upperStoreVLimit){
         uint16_t tmp_Vdiff = 0;
-        if((settings.StoreVsetpoint - bms.getHighCellVolt() < 0) || BMC_Stat == Stat_Charged){chargecurrent = 0;} // 0A if highest cell is above Store setpoint or charged
+        if((settings.StoreVsetpoint - bms.getHighCellVolt() < 0)){chargecurrent = 0;} // 0A if highest cell is above Store setpoint or charged
         else {tmp_Vdiff = settings.StoreVsetpoint - bms.getHighCellVolt();}
-        tmp_chargecurrent = (ChargeMaxCurrent * (tmp_Vdiff*tmp_Vdiff)/((settings.ChargeHys/2)*(settings.ChargeHys/2))) + EndCurrent;
+        tmp_chargecurrent = (ChargeMaxCurrent * (tmp_Vdiff*tmp_Vdiff)/((settings.ChargeHys)*(settings.ChargeHys))) + EndCurrent;
         // Old linear derating
         //tmp_chargecurrent = map(bms.getHighCellVolt(), upperStoreVLimit, settings.StoreVsetpoint, ChargeMaxCurrent, EndCurrent);
         tmp_chargecurrent = constrain(tmp_chargecurrent,0,ChargeMaxCurrent);
         chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
       }
     } else { 
-      uint16_t upperVLimit = settings.ChargeVSetpoint - settings.ChargeHys/2; //[ToDo] make derate setpoint configurable?
+      uint16_t upperVLimit = settings.ChargeVSetpoint - settings.ChargeHys; //[ToDo] make derate setpoint configurable?
       if (bms.getHighCellVolt() > upperVLimit){
         // Old linear derating
         //tmp_chargecurrent = map(bms.getHighCellVolt(), upperVLimit, settings.ChargeVSetpoint, ChargeMaxCurrent, EndCurrent);
         uint16_t tmp_Vdiff = 0;
-        if((settings.ChargeVSetpoint - bms.getHighCellVolt() < 0) || BMC_Stat == Stat_Charged){chargecurrent = 0;} // 0A if highest cell is above Charge setpoint or charged
+        if(settings.ChargeVSetpoint - bms.getHighCellVolt() < 0){chargecurrent = 0;} // 0A if highest cell is above Charge setpoint or charged
         else {tmp_Vdiff = settings.ChargeVSetpoint - bms.getHighCellVolt();}
-        tmp_chargecurrent = (ChargeMaxCurrent * (tmp_Vdiff*tmp_Vdiff)/((settings.ChargeHys/2)*(settings.ChargeHys/2))) + EndCurrent;
+        tmp_chargecurrent = (ChargeMaxCurrent * (tmp_Vdiff*tmp_Vdiff)/((settings.ChargeHys)*(settings.ChargeHys))) + EndCurrent;
         tmp_chargecurrent = constrain(tmp_chargecurrent,0,ChargeMaxCurrent);
         chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
        }      
@@ -2090,6 +2098,8 @@ void ChargeCurrentLimit(){
   if(chargecurrent == 0 && currentact < 0){
     chargecurrent = chargecurrentlast + (currentact / 100 / settings.nChargers) * -1;
   }
+
+
 
   // [ToDo] implement feedback loop
   // multiply with calculated current
