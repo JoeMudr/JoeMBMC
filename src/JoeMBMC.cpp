@@ -2100,7 +2100,7 @@ void ChargeCurrentLimit(){
 
   // [ToDo] implement feedback loop
   // multiply with calculated current
-  chargecurrentFactor = currentact / chargecurrent;
+  chargecurrentFactor = currentact / 100 / chargecurrent;
   chargecurrentlast = chargecurrent;
 }
 
