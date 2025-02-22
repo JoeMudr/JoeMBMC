@@ -428,7 +428,7 @@ void BMSManager::clearModules(){
     }    
 }
 
-byte BMSManager::getBalancingCells(byte moduleNr){
+uint16_t BMSManager::getBalancingCells(byte moduleNr){
   if (modules[moduleNr].isExisting()){return balancingCells[moduleNr];}
   else{return 254;}    
 }
@@ -439,7 +439,7 @@ uint16_t BMSManager::getBalancing(){
     {
         if(modules[moduleNr].isExisting()){
             // count number of bits set in the balancing mask for each module
-            byte mask = balancingCells[moduleNr];
+            uint16_t mask = balancingCells[moduleNr];
             while(mask)
             {
                 CellsNo += mask & 1;
@@ -506,18 +506,25 @@ CAN_Struct BMSManager::Balancing(uint16_t BalHys, bool active){
     return BalanceMatrix;
 }
 
+/*
+    Tesla_Balancing() is not returning any CAN_Struct, as Tesla_BMS does not use CAN-Bus for balancing.
+    Instead it communicates via Serial directly in BMSModule.cpp.
+*/
 void BMSManager::Tesla_Balancing(uint16_t BalHys,bool active){
     
-    uint8_t balance_Bitmask = 0; //bit 0 - 5 are to activate cell balancing 1-6 etc.
+    uint8_t balance_Bitmask = 0; //bit 0 - 5 are to activate cell balancing 1-6
     for (byte moduleNr = 1; moduleNr <= MAX_MODULE_ADDR; moduleNr++){ 
         if(modules[moduleNr].isExisting()){
             if (active){
                 balance_Bitmask = 0;
-                for (byte cellNr = 0; cellNr < MAX_CELL_No_Tesla; cellNr++)
-                {if (getLowCellVolt() + BalHys < modules[moduleNr].getCellVoltage(cellNr)){balance_Bitmask = balance_Bitmask | (1 << cellNr);}}
+                for (byte cellNr = 0; cellNr < MAX_CELL_No_Tesla; cellNr++){
+                    if ((getLowCellVolt() + BalHys) < modules[moduleNr].getCellVoltage(cellNr)){
+                        balance_Bitmask = balance_Bitmask | (1 << cellNr);
+                    }
+                }
+                balancingCells[moduleNr] = balance_Bitmask;
                 if (balance_Bitmask){
                     modules[moduleNr].balanceModule(balance_Bitmask);
-                    balancingCells[moduleNr] = balance_Bitmask;
                 }
             } else {
                 modules[moduleNr].stopBalance();
@@ -530,7 +537,7 @@ void BMSManager::Tesla_Balancing(uint16_t BalHys,bool active){
 CAN_Struct BMSManager::VW_Balancing(uint16_t BalHys,bool active){
     CAN_Struct BalanceMatrix;
     BalanceMatrix = clearCANStruct();
-    uint8_t balance_Bitmask = 0; //bit 0 - 5 are to activate cell balancing 1-6 etc.
+    uint16_t balance_Bitmask = 0; //bit 0 - 11 are to activate cell balancing 1-12
     // set balance IDs
     uint32_t BalanceIDs[24];
     BalanceIDs[0] = 0x1A55540A;
@@ -564,8 +571,11 @@ CAN_Struct BMSManager::VW_Balancing(uint16_t BalHys,bool active){
             balance_Bitmask = 0;
             byte MessageNr = 0;
 
-            for (byte i = 0; i < 12; i++){
-                if ((LowCellVolt + BalHys) < modules[moduleNr].getCellVoltage(i)){balance_Bitmask = balance_Bitmask | (1 << i);}
+            for (byte CellNr = 0; CellNr < 12; CellNr++){
+                if ((getLowCellVolt() + BalHys) < modules[moduleNr].getCellVoltage(CellNr)){
+                    balance_Bitmask = balance_Bitmask | (1 << CellNr);
+                }
+                balancingCells[moduleNr] = balance_Bitmask;
             }
             
             if (active)  {

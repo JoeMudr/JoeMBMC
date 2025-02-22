@@ -681,18 +681,15 @@ byte Vehicle_CondCheck(byte tmp_status){
       if (precharged || settings.ChargerDirect){tmp_status = Stat_Charge;}
       else {tmp_status = Stat_Precharge;}      
     }
-    //Set 100% when Voltage gets above Charge Voltage 
-    //Set charged when Voltage gets above Charge Voltage
+    //Set SOC 100% / charged when Voltage gets above Charge Voltage 
     if (bms.getHighCellVolt() > (settings.ChargeVSetpoint)){
       SOC_charged();
       tmp_status = Stat_Charged;
     }
-
     // Set charged Voltage is above Charge Voltage - ChargeHyst.
     if (bms.getHighCellVolt() > (settings.ChargeVSetpoint - settings.ChargeHys) && tmp_status != Stat_Charge){
       tmp_status = Stat_Charged;
     }    
-
 
     if(WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_ChargeCurHigh) || 
        WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_ChargeTHigh) || 

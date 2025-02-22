@@ -32,7 +32,7 @@ public:
     uint16_t getAvgCellVolt();
     int16_t getAvgTemperature();
     void clearModules();
-    byte getBalancingCells(byte module_id); //move to module?
+    uint16_t getBalancingCells(byte module_id); //move to module?
     uint16_t getBalancing(); //returns number of currently balancing cells
     byte getNumModules(); //byte ausreichend?
     uint16_t getSeriesCells();
@@ -53,7 +53,7 @@ private:
     byte TSensor;
     byte numFoundModules;
     byte moduleReadCnt; // count how many modules have been read
-    byte balancingCells[MAX_MODULE_ADDR+1];
+    uint16_t balancingCells[MAX_MODULE_ADDR+1];
     void VW_get_CMU_ID(CAN_message_t &msg,byte &CMU,byte &Id);
     void BMW_get_CMU_ID(CAN_message_t &msg,byte &CMU,byte &Id);
     uint8_t BMW_CRC(CAN_message_t &msg, byte Id);
