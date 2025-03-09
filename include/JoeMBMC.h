@@ -36,7 +36,7 @@ void CO_Send_SDO(uint32_t CO_Target_ID, uint8_t CCS, uint8_t expedited, uint16_t
 uint32_t CO_Handle(CAN_message_t MSG);
 void SOC_update();
 void DischargeCurrentLimit();
-void ChargeCurrentLimit();
+void ChargeCurrentLimit(uint16_t ChargeCurrent  = 65535);
 int32_t Currentavg_Calc();
 void WDOG_reset();
 void Menu(String Menu_Option = "");

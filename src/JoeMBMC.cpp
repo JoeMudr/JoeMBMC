@@ -867,8 +867,8 @@ void BMC_Statemachine(byte status){
       }
       Balancing(true);
       DischargeCurrentLimit();
-      //ChargeCurrentLimit();
-      chargecurrent = 0;
+      ChargeCurrentLimit(0);
+      //chargecurrent = 0;
       Warn_Out_handle();
       CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
     break;
@@ -2032,13 +2032,17 @@ int16_t pgnFromCANId(int16_t canId){ //Parameter Group Number
   if ((canId & 0x10000000) == 0x10000000){return (canId & 0x03FFFF00) >> 8;}
   else{return canId;}
 }
-
-void ChargeCurrentLimit(){
+/* 
+  This function will allways select the lowest charge current depending on environmental conditions.
+*/
+void ChargeCurrentLimit(uint16_t _tmp_chargecurrent){
   uint16_t EndCurrent = settings.ChargeCurrentEnd / settings.nChargers;
   int16_t tmp_chargecurrent = 0; // can get negative by mapping
   uint16_t ChargeMaxCurrent = 0;
   static uint16_t chargecurrentlast = 0;   // in 0,1A#
-  uint32_t chargecurrent_Timer = 0;
+  static uint32_t chargecurrent_Timer = 0;
+  static bool chargecurrent_Taper = false;
+  uint16_t Taper_Time = 30000; // 10s
   ///Start at no derating///
 
   //select smaller value as max charge current
@@ -2096,7 +2100,27 @@ void ChargeCurrentLimit(){
     chargecurrent = chargecurrentlast + (currentact / 100 / settings.nChargers) * -1;
   }
 
+  // overwrite with passed charge current if lower
+  chargecurrent = _tmp_chargecurrent < chargecurrent ? _tmp_chargecurrent : chargecurrent;
 
+  //[Totest]
+  // prepare for tapering after 0A
+  if(chargecurrent == 0) {
+    chargecurrent_Timer = millis();
+    chargecurrent_Taper = true;
+  }
+  
+  // slowly increase chargecurrent after 0A
+  if(chargecurrent_Taper && millis() - chargecurrent_Timer < Taper_Time){
+    tmp_chargecurrent = map(millis() - chargecurrent_Timer, 0, Taper_Time, 0, ChargeMaxCurrent);
+    tmp_chargecurrent = constrain(tmp_chargecurrent,0,ChargeMaxCurrent);
+    chargecurrent = tmp_chargecurrent < chargecurrent ? tmp_chargecurrent : chargecurrent;
+  }
+
+  // disable tapering after Taper_Time
+  if(chargecurrent_Taper && millis() - chargecurrent_Timer >= Taper_Time){
+    chargecurrent_Taper = false;
+  }
 
   // [ToDo] implement feedback loop
   // multiply with calculated current
