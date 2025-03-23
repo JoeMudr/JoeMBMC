@@ -28,7 +28,7 @@
 Stream* activeSerial = &Serial_USB;
 
 /////Version Identifier/////////
-uint32_t firmver = 250309;
+uint32_t firmver = 250323;
 
 uint32_t Uptime = 0;
 
@@ -987,7 +987,7 @@ void Serial_Print(bool Modules_Print){
     {activeSerial->printf("(A Single): ");}
   if (settings.CurSenType == Sen_Canbus)
     {activeSerial->printf("(CAN): ");}
-  activeSerial->printf("%6imA, %6imW\r\n",currentact, currentact * bms.getPackVoltage() / 1000);
+  activeSerial->printf("%6imA, %10.2fmW\r\n",currentact, currentact * double(bms.getPackVoltage()) / 1000);
   activeSerial->printf("SOC:       %3u%%  (%.2fmAh)\r\n",SOC,double(mampsecond) / 3600);
   activeSerial->printf("SOH:       %3u%%  (%u/%uAh)\r\n",SOH_calc(),settings.CAP,settings.designCAP);
   activeSerial->printf("TCap:      %3uAh (%uWh)\r\n",abs(TCAP),abs(TCAP_Wh));
@@ -2041,8 +2041,8 @@ void ChargeCurrentLimit(uint16_t _tmp_chargecurrent){
   uint16_t ChargeMaxCurrent = 0;
   static uint16_t chargecurrentlast = 0;   // in 0,1A#
   static uint32_t chargecurrent_Timer = 0;
-  static bool chargecurrent_Taper = false;
-  uint16_t Taper_Time = 30000; // 10s
+  //static bool chargecurrent_Taper = false;
+  //uint16_t Taper_Time = 30000; // 10s
   ///Start at no derating///
 
   //select smaller value as max charge current
@@ -2103,7 +2103,14 @@ void ChargeCurrentLimit(uint16_t _tmp_chargecurrent){
   // overwrite with passed charge current if lower
   chargecurrent = _tmp_chargecurrent < chargecurrent ? _tmp_chargecurrent : chargecurrent;
 
-  //[Totest]
+  // [ToTest] limit to 2A above actual current. 
+  // replace "20" with settings in struct
+  // Limit charge current increase to X above actual current. For Slow Inverters
+  if (chargecurrent > (currentact / 100) + 20){
+    chargecurrent = currentact < 0 ? 20 : (currentact / 100) + 20;
+  }
+
+  /*
   // prepare for tapering after 0A
   if(chargecurrent == 0) {
     chargecurrent_Timer = millis();
@@ -2121,6 +2128,7 @@ void ChargeCurrentLimit(uint16_t _tmp_chargecurrent){
   if(chargecurrent_Taper && millis() - chargecurrent_Timer >= Taper_Time){
     chargecurrent_Taper = false;
   }
+  */
 
   // [ToDo] implement feedback loop
   // multiply with calculated current
