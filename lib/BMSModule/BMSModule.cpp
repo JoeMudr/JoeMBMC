@@ -311,6 +311,7 @@ byte BMSModule::balanceModule(byte balance_Bitmask){
                 BMSUtil::sendData(payload, 3, true);
                 delay(2);
                 BMSUtil::getReply(buff, 30);
+                //activeSerial->printf("%i ",balance_Bitmask); //[debug]
             }
         }
         break;
@@ -458,13 +459,11 @@ void BMSModule::readStatus(){
         BMSUtil::sendDataWithReply(payload, 3, false, buff, 4);
         break;
     
-    default:
-        break;
+    default: break;
     }
 }
 void BMSModule::stopBalance(){
-    switch (BMSType)
-    {
+    switch (BMSType){
     case BMS_Tesla:
         uint8_t buff[8];
         uint8_t payload[4];
@@ -473,6 +472,7 @@ void BMSModule::stopBalance(){
         payload[2] = 0; //write balance state to register
         BMSUtil::sendDataWithReply(payload, 3, true, buff, 4);
         delay(2);
+        //activeSerial->printf("Balance stopped %i,%i,%i --", payload[0], payload[1], payload[2]); //[debug]
     break;
     
     default: break;

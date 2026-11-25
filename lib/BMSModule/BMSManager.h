@@ -21,7 +21,7 @@ public:
     void readModulesValues(); // Serial
     void readModulesValues(CAN_message_t &msg); // CAN
     void printAllCSV(unsigned long timestamp, float current, int SOC);
-    void printPackDetails();
+    void printPackDetails(Stream* activeSerial = nullptr);
     uint16_t getHighCellVolt(); // in mV
     uint16_t getHighModuleVolt(); // in mV
     uint16_t getLowCellVolt(); // in mV
@@ -37,7 +37,7 @@ public:
     byte getNumModules(); //byte ausreichend?
     uint16_t getSeriesCells();
     void clearFaults();
-    CAN_Struct Balancing(uint16_t balhys, bool active); 
+    CAN_Struct Balancing(uint16_t balhys, bool active, Stream* activeSerial = nullptr);
 
 private:
     BMS_t BMSType;

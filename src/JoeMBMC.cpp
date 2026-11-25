@@ -18,210 +18,12 @@
   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#include <JoeMBMC.h>
+#include "JoeMBMC.h"
 #include <Arduino.h>
 #include <EEPROM.h>
-#include <ADC.h>          //https://github.com/pedvide/ADC
-#include <Filters.h>      //https://github.com/JonHub/Filters
-#include <Watchdog_t4.h>  //https://github.com/tonton81/WDT_T4
+#include "Watchdog_t4.h"  //https://github.com/tonton81/WDT_T4
+#include "Globals.h"
 
-Stream* activeSerial = &Serial_USB;
-
-/////Version Identifier/////////
-uint32_t firmver = 250323;
-
-uint32_t Uptime = 0;
-
-BMSManager bms;
-EEPROMSettings settings;
-
-//Curent filter//
-byte filterFrequency = 5 ;
-FilterOnePole lowpassFilter( LOWPASS, filterFrequency );
-
-//BMC wiring//
-//#define doesn't work here because Pins are used in Arrays below.
-const byte IN_ACUR2 = A0;      // analogue current sensor 1
-const byte IN_ACUR1 = A1;      // analogue current sensor 2
-const byte IN_BOD = A10;       // brownout detection on ADC pin [ToDo]
-const byte IN1_Key = 19;    // input 1 - high active
-const byte IN2_Gen = 18;    // input 2 - high active
-const byte IN3_AC = 20;     // input 3 - high active
-const byte IN4_HVIL = 21;   // input 4 - high active
-const byte OUT1 = 6;        // output 1 - high active
-const byte OUT2 = 5;        // output 2 - high active
-const byte OUT3 = 4;        // output 3 - high active
-const byte OUT4 = 3;        // output 4 - high active
-const byte OUT5 = 11;       // output 5 - Low active / PWM
-const byte OUT6 = 12;       // output 6 - Low active / PWM
-const byte OUT7 = 10;       // output 7 - Low active / PWM
-const byte OUT8 = 9;        // output 8 - Low active / PWM
-const byte LED = 13;
-
-// uint32_t LED_Timer = 0;
-
-byte BMC_Stat = 0;
-
-//Serial Menu
-bool menu_load = 0;
-
-//Errors
-uint32_t error_timer = 0;
-
-byte Settings_unsaved = 0;
-
-//variables for output control
-uint16_t pwmfreq = 18000;//pwm frequency
-
-uint16_t chargecurrent = 0;       // in 0,1A
-uint16_t chargecurrentFactor = 0; // in%, correction factor, when using multiple chargers
-uint16_t discurrent = 0;          // in 0,1A
-
-/*
-// SMA/Victron style Alarms & Warnings
-// even Bits --> Alarm / Warning raised
-// odd Bits --> Alarm / Warning cleared
-[0] (7/6) hight Temp.          (5/4) low Voltage           (3/2) high Voltage           (1/0) general Alarm
-[1] (7/6) high current         (5/4) low Temp. charge      (3/2) high Temp. charge      (1/0) low Temp.
-[2] (7/6) Internal Failure     (5/4) battery short circuit (3/2) contactor problem      (1/0) high current charge
-[3] (1/0) Cell Imbalance
-*/
-byte alarm[4],warning[4] = {0, 0, 0, 0};
-
-// uint32_t warning_timer = 0;
-
-unsigned char bmcname[8] = {'J', 'O', 'E', 'M', ' ', 'B', 'M', 'C'};
-unsigned char bmcmanu[8] = {'J', 'O', 'E', 'M', ' ', 'T', 'E', 'C'};
-
-//int32_t ISAVoltage1, ISAVoltage2, ISAVoltage3 = 0; //mV only with ISAscale sensor
-
-uint32_t BMSLastRead = 0; // [ToDo] not used
-
-//variables for current/capacity calulation
-uint16_t Sen_AnalogueRawValue;
-int32_t currentact = 0; // mA
-int32_t currentlast = 0; // mA
-int32_t RawCur;
-int32_t mampsecond = 0; // Range 0 = full to settings.cap * -1 = empty
-volatile int32_t mampsecondTimer = 0;
-byte Sen_Analogue_active_Nr = 1; // active analogue sensor: 1 = Sensor 1; 2 = Sensor 2
-int16_t TCAP = 0; //Temperature corrected Capacity in Ah including settings.Pstrings!
-int16_t TCAP_Wh = 0;
-//Variables for SOC calc
-byte SOC = 100; //State of Charge
-
-//charger variables Prusa
-byte maxac1 = 16; //Shore power 16A per charger; only used for prusa charger
-byte maxac2 = 10; //Generator Charging; only used for prusa charger
-const int16_t chargerid1 = 0x618; //bulk chargers (brusa)
-const int16_t chargerid2 = 0x638; //finishing charger (brusa)
-uint16_t chargerendbulk = 0; //mV before Charge Voltage to turn off the bulk charger/s
-uint16_t chargerend = 0; //mV before Charge Voltage to turn off the finishing charger/s
-
-
-bool v_CAN_Charger_Active = false; // global variable for CAN-Based chargers
-u_int32_t v_CAN_Charger_Active_Timer = 0; // Reset-timer for v_CAN_Charger_Active
-
-
-//variables
-byte storagemode = 0;
-byte precharged = 0;
-
-byte output_debug_counter = 0;
-
-//Output Control
-byte cont_pulltime = 255;
-
-/*
-Array for looping through outputs
-OUT1 = 1, OUT2 = 2 ...
-*/
-const byte *Outputs[9] = {0,&OUT1,&OUT2,&OUT3,&OUT4,&OUT5,&OUT6,&OUT7,&OUT8};
-
-/*
-Array for function states & according timers for PWMs (full pull->reduced power)
-[0][x] Function State (High/Low); [1][x] timer
-*/
-#define Out_States_Max 13
-byte Out_States[2][Out_States_Max] = {{0,0,0,0,0,0,0,0,0,0,0,0,0},{0,cont_pulltime,cont_pulltime,cont_pulltime,0,0,0,0,0,0,0,0,0}}; 
-
-/*
-Text desctiptions for output funktions:
-0 - undefined, 
-1 - precharge Contactor, 
-2 - positive Contactor, 
-3 - negative Contactor, 
-4 - Discharge enable, 
-5 - Charge Enable, 
-6 - Error, 
-7 - Warning, 
-8 - Error & Warning 
-9 - Heating enable, 
-10 - Cooling enable, 
-11 - Gauge
-12 - Balance enable
-*/
-String Out_Functions[] = {
-  "undefined", 
-  "precharge Cont.", 
-  "positive Cont.", 
-  "negative Cont.", 
-  "Discharge enable", 
-  "Charge enable", 
-  "Error", 
-  "Warning", 
-  "Error & Warning",
-  "Heating enable", 
-  "Cooling enable", 
-  "Gauge",
-  "Balance enable"
-};
-
-//IDs for Array above
-#define Out_undefined 0
-#define Out_Cont_Precharge 1
-#define Out_Cont_Pos 2
-#define Out_Cont_Neg 3
-#define Out_Discharge 4
-#define Out_Charge 5
-#define Out_Error 6
-#define Out_Warning 7
-#define Out_Err_Warn 8
-#define Out_Heating 9
-#define Out_Cooling 10
-#define Out_Gauge 11
-#define Out_Balance 12
-
-//uint32_t Out_PWM_fullpull_Timer = 0; // PWM Timer
-
-// CAN
-FlexCAN_T4<CAN1> can1;
-FlexCAN_T4<CAN2> can2;
-
-// uint32_t CAN_BMC_Std_send_Timer = 0;
-
-// Debugging modes
-bool debug = 1;
-bool debug_Input = 0;   // read digital inputs
-bool debug_Output = 0;  // check outputs
-bool debug_CAN1 = 0;    // view can frames
-bool debug_CAN2 = 0;    // view can frames
-bool debug_Gauge = 0;
-byte  debug_Gauge_val = 0;
-uint32_t debug_Gauge_timer = 0;
-bool debug_Cur = 0;
-bool debug_CSV = 0;
-byte debug_Digits = 2; // amount of digits behind decimal for voltage reading
-
-ADC *adc = new ADC(); // adc object
-
-// TCU Variables
-byte TCU_Pump = 0;
-byte TCU_Cool = 0;
-byte TCU_Heat = 0;
-byte TCU_REL4 = 0;
-
-IntervalTimer Timer_mAmpSec;
 
 void loadDefaultSettings(){
   settings.version = EEPROM_VERSION;
@@ -239,8 +41,8 @@ void loadDefaultSettings(){
   settings.CellGap = 500; 
   settings.OverTAlarm = 550; // 0.1°C
   settings.OverTWarn = 450; // 0.1°C
-  settings.UnderTWarn = 50; // 0.1°C
-  settings.UnderTAlarm = 0; // 0.1°C
+  settings.UnderTWarn = 0; // 0.1°C
+  settings.UnderTAlarm = -200; // 0.1°C
   settings.ChargeOverTAlarm = 550; // 0.1°C
   settings.ChargeOverTWarn = 450; // 0.1°C
   settings.ChargeUnderTWarn = 50; // 0.1°C
@@ -571,7 +373,7 @@ bool WarnAlarm_Check(byte Type, byte WarnAlarm){
   if (bms.getLowCellVolt() < (settings.UnderVWarn)){
     warning[0] ^= 0b00110000;
     if (!warning_timer){warning_timer = millis() + 10000;}
-    if (millis() > warning_timer){CAP_recalc();warning_timer = 0;} // recalculate capacity when lowest cell is under warning setpoint; reset Timer to prevent EEPROM Kill
+    //if (millis() > warning_timer){CAP_recalc();warning_timer = 0;} // [ToDo] recalculate capacity when lowest cell is under warning setpoint; reset Timer to prevent EEPROM Kill
   } else {warning_timer = 0;}    
   if (bms.getLowCellVolt() < settings.UnderVAlarm){alarm[0] ^= 0b00110000;}
 
@@ -698,7 +500,6 @@ byte Vehicle_CondCheck(byte tmp_status){
   }
 
   // Set Error depending on Error conditions, except Undervoltage to let Charging recover from Undervoltage
-  // Undertemp is no Error in Drive & Charge (--> derate)
   
   if (WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_Vhigh) || 
       WarnAlarm_Check(WarnAlarm_Alarm,WarnAlarm_THigh) || 
@@ -844,8 +645,8 @@ void BMC_Statemachine(byte status){
       set_OUT_States(Out_Charge);
       set_OUT_States(Out_Cont_Neg);
       set_OUT_States(Out_Cont_Pos);      
-      CAP_recalc();
-      if (Settings_unsaved){EEPROM.put(0, settings); Settings_unsaved = 0; activeSerial->printf("--Saved--\r\n");}
+      //CAP_recalc(); [ToDo]
+      //if (Settings_unsaved){EEPROM.put(0, settings); Settings_unsaved = 0; activeSerial->printf("--Saved--\r\n");} [ToDo]
       if (digitalRead(IN1_Key) == HIGH){set_OUT_States(Out_Gauge);} // enable gauge if key is on
       Balancing(true);
       DischargeCurrentLimit();
@@ -931,7 +732,7 @@ void Balancing(bool active){
   CAN_Struct BalanceMatrix;
   BalanceMatrix = clearCANStruct();
   if (active && bms.getHighCellVolt() > settings.balanceVoltage && bms.getHighCellVolt() > bms.getLowCellVolt() + settings.balanceHyst){
-    BalanceMatrix = bms.Balancing(settings.balanceHyst, true);
+    BalanceMatrix = bms.Balancing(settings.balanceHyst, true, activeSerial);
     for (byte CANMsgNr = 0; CANMsgNr < CAN_Struct_size; CANMsgNr++){
       if (BalanceMatrix.Frame[CANMsgNr].id){ // We only send actually filled Frames.
       //[ToDo] restrict to interval? will otherwise flood the CAN bus.
@@ -943,74 +744,11 @@ void Balancing(bool active){
       }
     }
   } else {
-    bms.Balancing(settings.balanceHyst, false);
+    bms.Balancing(settings.balanceHyst, false, activeSerial);
   }
 }
 
-void Serial_Print(bool Modules_Print){
-  Serial_clear();
-  activeSerial->printf("Firmware:   %i\r\n", firmver);
-  activeSerial->printf("BMC Status: ");
-  switch (BMC_Stat){
-    case (Stat_Boot): activeSerial->printf("Boot"); break;
-    case (Stat_Ready): activeSerial->printf("Ready"); break;
-    case (Stat_Precharge): activeSerial->printf("Precharge"); break;
-    case (Stat_Drive): activeSerial->printf("Drive"); break;
-    case (Stat_Charge): activeSerial->printf("Charge"); break;
-    case (Stat_Charged): activeSerial->printf("Charged"); break;
-    case (Stat_Error): activeSerial->printf("Error"); break;
-    case (Stat_Idle): activeSerial->printf("Idle"); break;
-    case (Stat_Discharge): activeSerial->printf("Discharge"); break; 
-  }
-  if (Warn_Out_handle()){activeSerial->printf(" (Warning!)\r\n");} else {activeSerial->printf("\r\n");}
-  activeSerial->printf("Uptime: %02d:%02d:%02d\r\n",Uptime/3600,(Uptime%3600)/60,Uptime%60);
-  
-  activeSerial->printf("\r\nCurrent Limit: Charge %5.2fA (%5.2fA), Factor: %3u% | Discharge %5.2fA \r\n",float(chargecurrent) * settings.nChargers / 10, float(chargecurrent) / 10, chargecurrentFactor, float(discurrent) / 10);
-  activeSerial->printf("Vpack: %5.2fV | Vlow: %4umV | Vhigh: %4umV | DeltaV: %4umV | Tlow: %3.1f°C | Thigh: %3.1f°C\r\n",double(bms.getPackVoltage()) / 1000,bms.getLowCellVolt(),bms.getHighCellVolt(),bms.getHighCellVolt() - bms.getLowCellVolt(),float(bms.getLowTemperature()) / 10,float(bms.getHighTemperature()) / 10);
-  activeSerial->printf("Cells: %u/%u",bms.getSeriesCells(),settings.Scells * settings.Pstrings);
 
-  if (bms.getBalancing()){ activeSerial->printf(" | Balancing Active\r\n\n"); } else { activeSerial->printf("\r\n\n"); }
-  if(Modules_Print){bms.printPackDetails();}
-  else{activeSerial->printf("Modules / Cells hidden\r\n");}
-  if(WarnAlarm_Check(WarnAlarm_Warning,WarnAlarm_External)){
-    activeSerial->printf("!!! Internal Error / Series Cells Fault !!!\r\n\n");
-  } else { activeSerial->printf("\r\n");}
-  
-  activeSerial->printf("Current ");
-  if (settings.CurSenType == Sen_AnalogueDual){
-    if (Sen_Analogue_active_Nr == 1)
-      { activeSerial->printf("(A Low):  "); }
-    else if (Sen_Analogue_active_Nr == 2)
-      { activeSerial->printf("(A High): "); }
-  }
-  if (settings.CurSenType == Sen_AnalogueSing)
-    {activeSerial->printf("(A Single): ");}
-  if (settings.CurSenType == Sen_Canbus)
-    {activeSerial->printf("(CAN): ");}
-  activeSerial->printf("%6imA, %10.2fmW\r\n",currentact, currentact * double(bms.getPackVoltage()) / 1000);
-  activeSerial->printf("SOC:       %3u%%  (%.2fmAh)\r\n",SOC,double(mampsecond) / 3600);
-  activeSerial->printf("SOH:       %3u%%  (%u/%uAh)\r\n",SOH_calc(),settings.CAP,settings.designCAP);
-  activeSerial->printf("TCap:      %3uAh (%uWh)\r\n",abs(TCAP),abs(TCAP_Wh));
-  int32_t minutes = ETA();
-  activeSerial->printf("ETA:       %2ih %2im\r\n",minutes / 60,minutes % 60);
-  activeSerial->printf("Warning:   ");
-  for (byte i = 0; i < 4; i++){
-    activeSerial->printf("%08i ",ConvertToBin(warning[i]));
-  }
-  activeSerial->printf("\r\n");
-  activeSerial->printf("Error:     ");
-  for (byte i = 0; i < 4; i++){
-    activeSerial->printf("%08i ",ConvertToBin(alarm[i]));
-  }
-  activeSerial->printf("\r\n");
-  activeSerial->printf("\r\n");
-
-  activeSerial->printf("IN %d%d%d%d %s %s\r\n",digitalRead(IN1_Key),digitalRead(IN2_Gen),digitalRead(IN3_AC),digitalRead(IN4_HVIL),Charge_Active()?"| Charger plugged":"",digitalRead(IN1_Key)?"| Key ON":"");
-  if(TCU_Pump || TCU_Cool || TCU_Heat || TCU_REL4){
-    activeSerial->printf("TCU: %s%s%s%s\r\n",TCU_Pump-1?"Pumping ":"",TCU_Cool-1?"Cooling ":"",TCU_Heat-1?"Heating ":"",TCU_REL4-1?"REL4":"");
-  }
-  activeSerial->printf("\r\n");
-}
 
 uint32_t ConvertToBin(uint32_t Input){
   byte exponent = 0;
@@ -1135,6 +873,29 @@ void CAN_Debug_IN(byte CanNr, CAN_message_t MSG){
     case 2: activeSerial->printf("CAN2 "); break;
   }
   activeSerial->printf("IN ");
+  if (MSG.flags.extended){
+    activeSerial->printf("ext:%x  ",MSG.id);
+    pgn = pgnFromCANId(MSG.id);
+  } else {
+    activeSerial->printf("std:%x  ",MSG.id);
+  }
+  for (byte i = 0; i < MSG.len; i++) { // print the data
+    activeSerial->printf("%x ",MSG.buf[i]);
+  }
+  if(pgn){
+    activeSerial->printf("PGN: %i",pgn);
+  }
+  activeSerial->printf("\r\n");
+}
+
+void CAN_Debug_OUT(byte CanNr, CAN_message_t MSG){
+  int16_t pgn = 0;
+  
+  switch (CanNr){
+    case 1: activeSerial->printf("CAN1 "); break;
+    case 2: activeSerial->printf("CAN2 "); break;
+  }
+  activeSerial->printf("OUT ");
   if (MSG.flags.extended){
     activeSerial->printf("ext:%x  ",MSG.id);
     pgn = pgnFromCANId(MSG.id);
@@ -1419,27 +1180,6 @@ void set_OUTs(){
   lastrun = millis();
 }
 
-void OUT_print(bool Out_Print){
-  if(!Out_Print){return;}
-
-  activeSerial->printf("Function         State Timer\r\n");
-  activeSerial->printf("----------------------------\r\n");
-  for(byte i = 1; i < Out_States_Max; i++){
-    activeSerial->printf("%-16s %5i %5i\r\n",Out_Functions[i].c_str(),Out_States[0][i],Out_States[1][i]);
-  } 
-  activeSerial->printf("\r\n");
-  activeSerial->printf("Output        Function  PWM\r\n");
-  activeSerial->printf("---------------------------\r\n");
-  for(byte i = 1; i < 9; i++){ //[ToDo] use array size for loop?
-    activeSerial->printf("OUT%i   %16s ",i,Out_Functions[settings.Out_Map[0][i]].c_str());
-    if(i>4){
-      if(settings.Out_Map[0][i] == Out_Gauge){activeSerial->printf("%3i",Gauge_update());} // get Gauge PWM directly from function.
-      else {activeSerial->printf("%3i",settings.Out_Map[1][i]);}
-    }
-    activeSerial->printf("\r\n");
-  }  
-}
-
 //END new Output Control
 
 byte Gauge_update(){ 
@@ -1503,519 +1243,6 @@ void CurrentOffsetCalc(){
   }
 }
 
-void Menu(String menu_option_string){
-  static byte menu_current = 0;
-  static byte menu_option = 0;
-  //String menu_option_string;
-  char menu_option_char;
-  int32_t menu_option_val = 0;
-  float menu_option_val_Float = 0.0;
-  String menu_option_val_String = "0";  
-  
-  //  menu_option = 0;
-  if (menu_option_string != ""){
-  //if (Serial_USB.available()){
-    //menu_option_string = Serial_USB.readString(); 
-    //menu_option_string = activeSerial->readString(); 
-    menu_option_string.trim();
-    menu_option_char = menu_option_string.charAt(0);
-    menu_option = menu_option_string.toInt();
-    if (menu_option == 0){ menu_option = menu_option_char; }
-    //menu_option_val = split(menu_option_string,'=',1);
-    for (uint16_t i = 0; i < menu_option_string.length(); i++) {
-      if (menu_option_string.substring(i, i+1) == "=") { 
-        menu_option_val = menu_option_string.substring(i+1).toInt();
-        menu_option_val_Float = menu_option_string.substring(i+1).toFloat();
-        menu_option_val_String = menu_option_string.substring(i+1);        
-        break;
-      }
-    }
-  } else { menu_option = 0; }
-  
-  /*
-  if (menu_option != 109 && menu_load == 0){return;}
-  else {menu_load = 1;}
-*/
-
-  switch (menu_current) {
-    case Menu_Start:
-      menu_current = Menu_Main;
-      Serial_clear();
-      activeSerial->printf("Main\r\n");
-      activeSerial->printf("--------------------\r\n");
-      activeSerial->printf("[1]  Battery\r\n");
-      activeSerial->printf("[2]  Current Sensor\r\n");
-      activeSerial->printf("[3]  Charger\r\n");
-      activeSerial->printf("[4]  Motor Controller\r\n");
-      activeSerial->printf("[5]  Outputs\r\n");
-      activeSerial->printf("[6]  Alarms\r\n");
-      activeSerial->printf("[7]  Ignore Values\r\n");
-      activeSerial->printf("[8]  CAN-Bus\r\n");
-      activeSerial->printf("[9]  Misc.\r\n");
-      activeSerial->printf("[10] Debug\r\n");
-      activeSerial->printf("[11] Reboot\r\n");
-      activeSerial->printf("[12] Load Defaults\r\n");
-      activeSerial->printf("[13] Mode: %s\r\n",settings.ESSmode?"ESS":"Vehicle");
-      activeSerial->printf("[14] BMS-Type: ");
-      switch (settings.BMSType){
-        case BMS_Dummy: activeSerial->printf("NONE\r\n"); break;
-        case BMS_Tesla: activeSerial->printf("Tesla Model S/X\r\n"); break;
-        case BMS_VW_MEB:activeSerial->printf("VW MEB\r\n");          break;
-        case BMS_VW_eGolf: activeSerial->printf("VW eGolf/GTE\r\n"); break;
-        case BMS_BMW_I3: activeSerial->printf("BMW i3\r\n"); break;
-        case BMS_BMW_MiniE: activeSerial->printf("BMW MiniE\r\n"); break;
-        default: break;
-      }
-      activeSerial->printf("\r\n");
-      activeSerial->printf("[q]  Save & Quit\r\n");
-    break;
-    case Menu_Main:
-      switch (menu_option){
-        case 1: menu_current = Menu_Battery; Menu(); break;
-        case 2: menu_current = Menu_CurSen; Menu(); break;
-        case 3: menu_current = Menu_Charger; Menu(); break;
-        case 4: menu_current = Menu_MC; Menu(); break;
-        case 5: menu_current = Menu_Outputs; Menu(); break;
-        case 6: menu_current = Menu_Alarms; Menu(); break;  
-        case 7: menu_current = Menu_IgnVal; Menu(); break;
-        case 8: menu_current = Menu_CAN; Menu(); break;  
-        case 9: menu_current = Menu_Misc; Menu(); break;   
-        case 10: menu_current = Menu_Debug; Menu(); break; 
-        case 11: SCB_AIRCR = 0x05FA0004; break;
-        case 12: loadDefaultSettings(); Menu(); activeSerial->printf("::::::Defaults loaded::::::\r\n"); break;    
-        case 13: settings.ESSmode = !settings.ESSmode; menu_current = Menu_Start; Menu(); break;       
-        case 14: 
-          if(settings.BMSType == BMS_Type_MAX){settings.BMSType = BMS_Dummy;} 
-          else {settings.BMSType = static_cast<BMS_t>(settings.BMSType + 1);} 
-          BMSInit(); // reset BMS with new Settings
-          menu_current = Menu_Start; Menu(); 
-        break;
-        case 120: (_reboot_Teensyduino_()); //-> hidden Program Mode (x)
-        case Menu_Quit:
-          EEPROM.put(0, settings); //save all change to eeprom
-          menu_current = Menu_Start;
-          menu_load = 0;
-          activeSerial->printf("::::::Settings saved::::::\r\n");
-        break;
-      }
-    break;
-    case Menu_Battery:
-      switch (menu_option){
-        case 1: settings.OverVWarn = menu_option_val; Menu(); break;
-        case 2: settings.OverVAlarm = menu_option_val; Menu(); break;
-        case 3: settings.UnderVWarn = menu_option_val; Menu(); break;
-        case 4: settings.UnderVAlarm = menu_option_val; Menu(); break;
-        case 5: settings.OverTWarn = menu_option_val * 10; Menu(); break;
-        case 6: settings.OverTAlarm = menu_option_val * 10; Menu(); break;
-        case 7: settings.UnderTWarn = menu_option_val * 10; Menu(); break;    
-        case 8: settings.UnderTAlarm = menu_option_val * 10; Menu(); break;
-        case 9: settings.ChargeOverTWarn = menu_option_val * 10; Menu(); break;
-        case 10: settings.ChargeOverTAlarm = menu_option_val * 10; Menu(); break;
-        case 11: settings.ChargeUnderTWarn = menu_option_val * 10; Menu(); break;    
-        case 12: settings.ChargeUnderTAlarm = menu_option_val * 10; Menu(); break;            
-        case 13: settings.OverCurrWarn = menu_option_val * 10; Menu(); break;
-        case 14: settings.OverCurrAlarm = menu_option_val * 10; Menu(); break;
-        case 15: settings.ChargeOverCurrWarn = menu_option_val * 10; Menu(); break;
-        case 16: settings.ChargeOverCurrAlarm = menu_option_val * 10; Menu(); break;
-        case 17: settings.CellGap = menu_option_val; Menu(); break;  
-        case 18: settings.ChargeVSetpoint = menu_option_val; Menu(); break;
-        case 19: settings.balanceVoltage = menu_option_val; Menu(); break;   
-        case 20: settings.balanceHyst = menu_option_val; Menu(); break; 
-        case 21: settings.designCAP = menu_option_val; Menu(); break;
-        case 22: settings.CAP = menu_option_val; Menu(); break;
-        case 23: settings.Pstrings = menu_option_val; Menu(); break;     
-        case 24: settings.Scells = menu_option_val; Menu(); break;  
-        case 25: settings.socvolt[0] = menu_option_val; Menu(); break;  
-        case 26: settings.socvolt[1] = menu_option_val; Menu(); break; 
-        case 27: settings.socvolt[2] = menu_option_val; Menu(); break;                                                               
-        case 28: settings.socvolt[3] = menu_option_val; Menu(); break;  
-        case 29: settings.StoreVsetpoint = menu_option_val; Menu(); break;  
-        case 30: settings.Temp_CAP_Map[0][0] = menu_option_val * 10; Menu(); break;
-        case 31: settings.Temp_CAP_Map[1][0] = menu_option_val; Menu(); break;
-        case 32: settings.Temp_CAP_Map[0][1] = menu_option_val * 10; Menu(); break;
-        case 33: settings.Temp_CAP_Map[1][1] = menu_option_val; Menu(); break;
-        case 34: settings.Temp_CAP_Map[0][2] = menu_option_val * 10; Menu(); break;
-        case 35: settings.Temp_CAP_Map[1][2] = menu_option_val; Menu(); break;
-        case 36: settings.Temp_CAP_Map[0][3] = menu_option_val * 10; Menu(); break;
-        case 37: settings.Temp_CAP_Map[1][3] = menu_option_val; Menu(); break;
-        case 38: settings.Temp_CAP_Map[0][4] = menu_option_val * 10; Menu(); break;
-        case 39: settings.Temp_CAP_Map[1][4] = menu_option_val; Menu(); break;
-        case Menu_Quit: menu_current = Menu_Start; Menu(); break;
-        default:
-          Serial_clear();
-          activeSerial->printf("Battery\r\n");
-          activeSerial->printf("--------------------\r\n\r\n");
-          activeSerial->printf("Cell limits:                        Warning         Alarm\r\n");    
-          activeSerial->printf("Cell Overvoltage (mV):           [1]   %4i    [2]   %4i\r\n",settings.OverVWarn, settings.OverVAlarm);
-          activeSerial->printf("Cell Undervoltage (mV):          [3]   %4i    [4]   %4i\r\n",settings.UnderVWarn, settings.UnderVAlarm);  //                     
-          activeSerial->printf("Over Temperature (°C):           [5]   %4i    [6]   %4i\r\n",settings.OverTWarn / 10, settings.OverTAlarm / 10);
-          activeSerial->printf("Under Temperature (°C):          [7]   %4i    [8]   %4i\r\n",settings.UnderTWarn / 10, settings.UnderTAlarm / 10);
-          activeSerial->printf("Charge Over Temperature (°C):    [9]   %4i   [10]   %4i\r\n",settings.ChargeOverTWarn / 10, settings.ChargeOverTAlarm / 10);
-          activeSerial->printf("Charge Under Temperature (°C):  [11]   %4i   [12]   %4i\r\n",settings.ChargeUnderTWarn / 10, settings.ChargeUnderTAlarm / 10);
-          activeSerial->printf("Discharge Current (A):          [13]   %4i   [14]   %4i\r\n",settings.OverCurrWarn / 10, settings.OverCurrAlarm / 10);
-          activeSerial->printf("Charge Current (A):             [15]   %4i   [16]   %4i\r\n",settings.ChargeOverCurrWarn / 10, settings.ChargeOverCurrAlarm / 10);
-          activeSerial->printf("Cell Delta Voltage (mV):                      [17]   %4i\r\n",settings.CellGap);
-          activeSerial->printf("\r\n");
-          activeSerial->printf("[18] Charge Voltage Setpoint (mV):          %4i\r\n",settings.ChargeVSetpoint); //
-          activeSerial->printf("[19] Cell Balance Voltage (mV):             %4i\r\n",settings.balanceVoltage);
-          activeSerial->printf("[20] Balance Hysteresis (mV):               %4i\r\n",settings.balanceHyst);
-          
-          activeSerial->printf("\r\n");
-          activeSerial->printf("Pack configuration:\r\n");         
-          activeSerial->printf("[21] Design Capacity (Ah):          %4i\r\n",settings.designCAP);
-          activeSerial->printf("[22] Current Capacity (Ah):         %4i\r\n",settings.CAP); 
-          activeSerial->printf("[23] Cells in Parallel:             %4i\r\n",settings.Pstrings);
-          activeSerial->printf("[24] Cells in Series:               %4i\r\n",settings.Scells );
-          activeSerial->printf("\r\n");
-          activeSerial->printf("Voltage based SOC:\r\n");
-          activeSerial->printf("[25] Setpoint1 (mV):        %4i\r\n",settings.socvolt[0]);
-          activeSerial->printf("[26] SOC @ Setpoint1 (%%):   %4i\r\n",settings.socvolt[1]);
-          activeSerial->printf("[27] Setpoint2 (mV):        %4i\r\n",settings.socvolt[2]);
-          activeSerial->printf("[28] SOC @ Setpoint2 (%%):   %4i\r\n",settings.socvolt[3]);
-          activeSerial->printf("[29] Storage Setpoint (mV): %4i\r\n",settings.StoreVsetpoint);
-          activeSerial->printf("\r\n");
-          activeSerial->printf("Temperature based SOC Adjustment:\r\n");
-          for (byte i = 0; i < 5; i++){
-            byte y = i*2;
-            activeSerial->printf("[%i] %3i°C [%i] %3i%%\r\n",30+y,settings.Temp_CAP_Map[0][i]/10,31+y,settings.Temp_CAP_Map[1][i]);
-          }
-          activeSerial->printf("\r\n");                    
-          activeSerial->printf("[q] Quit\r\n");          
-      }
-    break; 
-    case Menu_CurSen:
-      switch (menu_option){
-        case 1: settings.CurSenInvert = !settings.CurSenInvert; Menu(); break;
-        case 2: settings.voltsoc = !settings.voltsoc;  Menu(); break;
-        case 3: settings.CurSenMultiplier = menu_option_val; Menu(); break;
-        case 4: 
-          settings.CurSenType ++; 
-          if (settings.CurSenType > 3){settings.CurSenType = 0;}
-          Menu();
-        break;
-        case 5: settings.analogueSen1_convlow = menu_option_val; Menu(); break;
-        case 6: settings.analogueSen2_convhigh = menu_option_val; Menu(); break;
-        case 7: settings.analogueSen_ChangeCur = menu_option_val * 1000; Menu(); break;
-        case 8: settings.analogueSen_CurDead = menu_option_val; Menu(); break;                 
-        case 9: CurrentOffsetCalc(); Menu();break;
-        case Menu_Quit: menu_current = Menu_Start; Menu(); break;
-        case 100: debug_Cur = !debug_Cur; Menu(); break;
-        default:
-          Serial_clear();
-          activeSerial->printf("Current Sensor\r\n");
-          activeSerial->printf("--------------------\r\n");
-          activeSerial->printf("[1] Invert Current:     %i\r\n",settings.CurSenInvert);
-          activeSerial->printf("[2] Voltage based SOC:  %i\r\n",settings.voltsoc);
-          activeSerial->printf("[3] Current Multiplier: %i\r\n",settings.CurSenMultiplier);
-          activeSerial->printf("[4] Sensor Type: ");  
-          switch (settings.CurSenType) {
-            case Sen_Canbus:
-              activeSerial->printf(" Canbus Current Sensor\r\n");
-            break;
-            case Sen_AnalogueSing:
-              activeSerial->printf(" Analogue Single\r\n");
-              activeSerial->printf(" Enter value below without decimal point. E.g. 1250 for 12.50mV/A\r\n");
-              activeSerial->printf("[7] Analog Sensor 1 (low) mV/A:    %5.2f\r\n",float(settings.analogueSen1_convlow) / 100);
-              activeSerial->printf("[8] Current Sensor Deadband in mV: %5i\r\n",settings.analogueSen_CurDead); 
-              activeSerial->printf("[9] Calibrate\r\n");
-            break;
-            case Sen_AnalogueDual:
-              activeSerial->printf(" Analogue Dual\r\n");
-              activeSerial->printf(" Enter values below without decimal point. E.g. 1250 for 12.50mV/A\r\n");
-              activeSerial->printf("[5] Analog Sensor 1 (low) mV/A:      %5.2f\r\n",float(settings.analogueSen1_convlow) / 100);
-              activeSerial->printf("[6] Analog Sensor 2 (high) mV/A:     %5.2f\r\n",float(settings.analogueSen2_convhigh) / 100);  
-              activeSerial->printf("[7] Current Sensor switch over in A: %5i\r\n",settings.analogueSen_ChangeCur / 1000);                          
-              activeSerial->printf("[8] Current Sensor Deadband in mV:   %5i\r\n",settings.analogueSen_CurDead);  
-              activeSerial->printf("[9] Calibrate\r\n");
-            break;             
-            default: activeSerial->printf("Undefined\r\n");
-          }
-          activeSerial->printf("[d] Debug\r\n");    
-          activeSerial->printf("\r\n");
-          activeSerial->printf("[q] Quit\r\n");         
-      }
-    break;  
-    case Menu_Charger:
-      switch (menu_option){
-        case 1: settings.ChargeHys = menu_option_val; Menu(); break;
-        case 2: settings.ChargerChargeCurrentMax = menu_option_val * 10; Menu(); break;
-        case 3: settings.ChargeCurrentEnd = menu_option_val * 10; Menu(); break;
-        case 4:
-          settings.ChargerType++;
-          if (settings.ChargerType > 6){ settings.ChargerType = 0; }
-          Menu();
-        break;
-        case 5:
-          if (settings.ChargerDirect){settings.ChargerDirect = 0;}
-          else {settings.ChargerDirect = 1;}
-          Menu();
-        break;
-        case 6:
-          settings.nChargers = menu_option_val; Menu();
-        break;
-        case Menu_Quit: menu_current = Menu_Start; Menu(); break;
-        default:
-          Serial_clear();
-          activeSerial->printf("Charger\r\n");
-          activeSerial->printf("--------------------\r\n");
-          activeSerial->printf("[1] Charge Hysteresis (mV):                %4i\r\n",settings.ChargeHys);
-          if (settings.ChargerType > 0){
-            activeSerial->printf("[2] Max Charge Current per Charger (A):    %4i\r\n",settings.ChargerChargeCurrentMax / 10);
-            activeSerial->printf("[3] Pack End of Charge Current in (A):     %4i\r\n",settings.ChargeCurrentEnd / 10);
-          }
-          activeSerial->printf("[4] Charger Type:                 ");
-          switch (settings.ChargerType){
-            case 0: activeSerial->printf("%13s\r\n","undefined"); break;
-            case 1: activeSerial->printf("%13s\r\n","Brusa NLG5xx");  break;
-            case 2: activeSerial->printf("%13s\r\n","Volt Charger");  break;
-            case 3: activeSerial->printf("%13s\r\n","Eltek Charger"); break;
-            case 4: activeSerial->printf("%13s\r\n","Elcon Charger"); break;
-            case 5: activeSerial->printf("%13s\r\n","Victron/SMA");   break;
-            case 6: activeSerial->printf("%13s\r\n","Coda"); break;
-          }        
-          activeSerial->printf("[5] Charger HV Connection: ");
-          switch (settings.ChargerDirect){
-            case 0: activeSerial->printf("%20s\r\n","Behind Contactors"); break;
-            case 1: activeSerial->printf("%20s\r\n","Direct to Battery HV"); break;
-          }       
-          activeSerial->printf("[6] Number of Chargers in Parallel:        %4i\r\n",settings.nChargers);
-          activeSerial->printf("\r\n");
-          activeSerial->printf("[q] Quit\r\n"); 
-      }
-    break; 
-    case Menu_MC:
-      switch (menu_option){
-        case 1:
-          settings.mctype++;
-          if (settings.mctype > 1){ settings.mctype = 0; }
-          Menu();
-          break;
-        case Menu_Quit: menu_current = Menu_Start; Menu(); break;
-        default:
-        Serial_clear();
-        activeSerial->printf("Motor Controller\r\n");
-        activeSerial->printf("--------------------\r\n");
-        activeSerial->printf("[1] Controller Type: ");
-        switch (settings.mctype){
-          case 0: activeSerial->printf("not configured\r\n"); break;
-          case 1: activeSerial->printf("Curtis\r\n"); break;
-          default: activeSerial->printf("undefined\r\n");
-        }
-        activeSerial->printf("\r\n");
-        activeSerial->printf("[q] Quit\r\n"); 
-      }
-    break;
-    case Menu_Outputs:
-      switch (menu_option){
-        case 1: cycle_OUT_Mapping(1); Menu(); break;
-        case 2: cycle_OUT_Mapping(2); Menu(); break;
-        case 3: cycle_OUT_Mapping(3); Menu(); break;
-        case 4: cycle_OUT_Mapping(4); Menu(); break;
-        case 5: cycle_OUT_Mapping(5); Menu(); break;
-        case 6: set_OUT_Mapping(5,get_OUT_Mapping(5,0),menu_option_val); Menu(); break;
-        case 7: cycle_OUT_Mapping(6); Menu(); break;
-        case 8: set_OUT_Mapping(6,get_OUT_Mapping(6,0),menu_option_val); Menu(); break;
-        case 9: cycle_OUT_Mapping(7); Menu(); break;
-        case 10: set_OUT_Mapping(7,get_OUT_Mapping(7,0),menu_option_val); Menu(); break;
-        case 11: cycle_OUT_Mapping(8); Menu(); break;
-        case 12: set_OUT_Mapping(8,get_OUT_Mapping(8,0),menu_option_val); Menu(); break;
-        case 20: settings.PreTime = menu_option_val; Menu(); break;
-        case 21: settings.PreCurrent = menu_option_val; Menu(); break;
-        case 22: settings.GaugeLow = menu_option_val; Menu(); break;
-        case 23: settings.GaugeHigh = menu_option_val; Menu(); break;
-        case 24:
-          debug_Gauge_val = menu_option_val;
-          debug_Gauge = 1;
-          Menu();
-          break;        
-        case 100:
-          debug_Output = !debug_Output;
-          output_debug_counter = 0;
-          Menu();
-          break;
-        case Menu_Quit: menu_current = Menu_Start; Menu(); break;
-        default:
-          Serial_clear();
-          activeSerial->printf("Outputs\r\n");
-          activeSerial->printf("--------------------\r\n");
-          activeSerial->printf("12V Outputs:\r\n");
-          for (byte i = 1; i < 5; i++){ // [ToDo] use array size
-            activeSerial->printf("[%i] Out%i: %s\r\n",i,i,Out_Functions[settings.Out_Map[0][i]].c_str());                    
-          }
-          activeSerial->printf("\r\n");
-          activeSerial->printf("PWM/GND Outputs:\r\n");
-          for (byte i = 5; i < 9; i++){ // [ToDo] use array size
-            byte pos = 2*i-5;
-            activeSerial->printf("[%i] %sOut%i:             %16s\r\n",pos,pos<10?" ":"",i,Out_Functions[settings.Out_Map[0][i]].c_str());   
-            pos = 2*i-4;
-            activeSerial->printf("[%i] %sOut%i PWM [0-255]: %13s%3i\r\n",pos,pos<10?" ":"",i,"",settings.Out_Map[1][i]);   //%13s just for alignment, whitespaces
-          }      
-          activeSerial->printf("\r\n");
-          activeSerial->printf("Additional Settings:\r\n");
-          activeSerial->printf("[20] Precharge Timer in ms:          %4i\r\n",settings.PreTime);
-          activeSerial->printf("[21] Precharge finish Current in mA: %4i\r\n",settings.PreCurrent);
-          activeSerial->printf("[22] PWM Gauge low [0-255]:          %4i\r\n",settings.GaugeLow);
-          activeSerial->printf("[23] PWM Gauge high [0-255]:         %4i\r\n",settings.GaugeHigh);
-          activeSerial->printf("[24] Gauge Test [0-255] for 30s:     %4i\r\n",debug_Gauge_val);
-          activeSerial->printf("[d]  Debug Output ");         
-          if(debug_Output){ activeSerial->printf("ON\r\n"); } 
-          else {activeSerial->printf("OFF\r\n");}
-          activeSerial->printf("\r\n");
-          activeSerial->printf("[q] Quit\r\n");
-      }
-    break; 
-    case Menu_Alarms:
-      switch (menu_option){
-        case 1: settings.error_delay = menu_option_val; Menu(); break;
-        case 2: settings.Warning_Blink_Hz = menu_option_val; Menu(); break;
-        case 3: settings.Error_Blink_Hz = menu_option_val; Menu(); break;
-        case 4: settings.UnderVAlarm_DischHys = menu_option_val; Menu(); break;
-        case Menu_Quit: menu_current = Menu_Start; Menu(); break;
-        default:
-          Serial_clear();
-          activeSerial->printf("Alarms\r\n");
-          activeSerial->printf("--------------------\r\n");
-          activeSerial->printf("[1] Error Delay (ms):             %5i\r\n",settings.error_delay);
-          activeSerial->printf("[2] Warning blink (Hz):           %5i\r\n",settings.Warning_Blink_Hz);
-          activeSerial->printf("[3] Error blink (Hz):             %5i\r\n",settings.Error_Blink_Hz);
-          activeSerial->printf("[4] UnderV Discharge Hysteresis   %5i\r\n",settings.UnderVAlarm_DischHys);
-          activeSerial->printf("\r\n");        
-          activeSerial->printf("[q] Quit\r\n");          
-      }
-    break;   
-    case Menu_IgnVal:
-      switch (menu_option){
-        case 1:
-          settings.useTempSensor++;
-          if (settings.useTempSensor > 2){settings.useTempSensor = 0;}
-          BMSInit(); // reset BMS with new Settings
-          Menu();
-        break; 
-        case 2: 
-          settings.IgnoreVolt = menu_option_val; 
-          BMSInit(); // reset BMS with new Settings
-          Menu(); 
-        break;       
-        case Menu_Quit: menu_current = Menu_Start; Menu(); break;
-        default:
-          Serial_clear();
-          activeSerial->printf("Ignore Values\r\n");
-          activeSerial->printf("--------------------\r\n");
-          activeSerial->printf("[1] Use Temp. Sensor:       ");
-          if (!settings.useTempSensor){activeSerial->printf("both\r\n");}
-          else{activeSerial->printf("%4i\r\n",settings.useTempSensor);}
-          activeSerial->printf("[2] Ignore Cells under mV: %4i\r\n",settings.IgnoreVolt);
-          activeSerial->printf("\r\n"); 
-          activeSerial->printf("[q] Quit\r\n"); 
-      }
-    break;  
-    case Menu_CAN:
-      switch (menu_option){
-        case 1: settings.CAN1_Speed = menu_option_val * 1000; can1_start(); Menu(); break;  
-        case 2: debug_CAN1 = !debug_CAN1; Menu(); break;
-        case 3: settings.CAN2_Speed = menu_option_val * 1000; can2_start(); Menu(); break;  
-        case 4: debug_CAN2 = !debug_CAN2; Menu(); break;
-        case 5: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_BMC_std] = menu_option_val;} Menu(); break;
-        case 6: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_BMC_HV] = menu_option_val;} Menu(); break;
-        //case 7: settings.CAN_Map[1][0] = constrain(menu_option_val,0,255); Menu(); break;
-        case 7: if(menu_option_val >= 0 && menu_option_val < 3){settings.CAN_Map[0][CAN_BMS] = menu_option_val;} // 3 not allowed. Only CAN1 or CAN2. Not both.
-          Menu(); break;
-        //case 9: settings.CAN_Map[1][1] = constrain(menu_option_val,0,255); Menu(); break;        
-        case 8: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_Charger] = menu_option_val;} Menu(); break;
-        //case 11: settings.CAN_Map[1][2] = constrain(menu_option_val,0,255); Menu(); break;        
-        case 9: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_Curr_Sen] = menu_option_val;} Menu(); break;
-        case 10: if(menu_option_val >= 0 && menu_option_val < 4){settings.CAN_Map[0][CAN_MC] = menu_option_val;} Menu(); break;
-        case 111: //CO_Send_SDO(0x26,2,0,0x1800,0x02,0); // "o" for SDO
-        break;
-        case 112: //CO_SDO_send_test(0x26); // "p" for PDO
-        break;
-        case Menu_Quit: menu_current = Menu_Start; Menu(); break;
-        default:
-          Serial_clear();
-          activeSerial->printf("CAN-Bus settings\r\n");
-          activeSerial->printf("--------------------\r\n");
-          activeSerial->printf("[1] Can1 Baudrate in kbps: %i\r\n",settings.CAN1_Speed / 1000);
-          activeSerial->printf("[2] Debug CAN1: %s\r\n",debug_CAN1?"ON":"OFF");
-          activeSerial->printf("[3] Can2 Baudrate in kbps: %i\r\n",settings.CAN2_Speed / 1000);
-          activeSerial->printf("[4] Debug CAN2: %s\r\n",debug_CAN2?"ON":"OFF");
-          activeSerial->printf("\r\n");
-          activeSerial->printf("Functions:\r\n");
-          for (byte i = 0; i < CAN_MAP_MAX; i++){
-            //byte pos = (i+5)*2-5;
-            byte pos = i+5;
-            activeSerial->printf("[%i] %s",pos,pos<10?" ":"");
-            switch (i){
-              case 0: activeSerial->printf("BMC Std:          "); break;
-              case 1: activeSerial->printf("BMC HV:           "); break;
-              case 2: activeSerial->printf("BMS:              "); break;
-              case 3: activeSerial->printf("Charger:          "); break;
-              case 4: activeSerial->printf("Current Sensor:   "); break;
-              case 5: activeSerial->printf("Motor Controller: "); break;
-            }
-            switch (settings.CAN_Map[0][i]){
-              case 0: activeSerial->printf("%11s\r\n","undefined"); break;
-              case 1: activeSerial->printf("%11s\r\n","CAN1"); break;
-              case 2: activeSerial->printf("%11s\r\n","CAN2"); break;
-              case 3: activeSerial->printf("%11s\r\n","CAN1 & CAN2"); break;
-            }
-            if (i < 3){
-              pos = (i+5)*2-4;
-              //activeSerial->printf("[%i] %sInterval:         %9ims\r\n",pos,pos<10?" ":"",settings.CAN_Map[1][i]);
-            }
-          }
-          activeSerial->printf("\r\n");
-          activeSerial->printf("[q] Quit\r\n");
-      }
-    break;     
-    case Menu_Misc:
-      switch (menu_option){
-        case 1: settings.secondarySerial++; if(settings.secondarySerial > 2){settings.secondarySerial = 0;} Menu(); break;
-        case 2: settings.batteryID = strtol(menu_option_val_String.c_str(),NULL,16); Menu(); break;
-        case Menu_Quit: menu_current = Menu_Start; Menu(); break;
-        default:
-          Serial_clear();
-          activeSerial->printf("Experimental\r\n");
-          activeSerial->printf("--------------------\r\n");
-          activeSerial->printf("[1] Second Serial Port: ");
-          switch (settings.secondarySerial){
-            case 0: activeSerial->printf("%s\r\n","Serial Display"); break;
-            case 1: activeSerial->printf("%s\r\n","undefined"); break;
-            case 2: activeSerial->printf("%s\r\n","Bluetooth App (not used)"); break;
-          
-          }
-          activeSerial->printf("[2] Battery ID (HEX):   %#x\r\n",settings.batteryID);
-          activeSerial->printf("\r\n");
-          activeSerial->printf("[q] Quit\r\n");
-      }
-    break; 
-    case Menu_Debug:
-      switch (menu_option){
-        case 1: debug_CAN1 = !debug_CAN1; Menu(); break;
-        case 2: debug_CAN2 = !debug_CAN2; Menu(); break;
-        case 3: debug_Cur = !debug_Cur; Menu(); break;
-        case 4: debug_Output = !debug_Output; output_debug_counter = 0; Menu(); break;
-        case 5: debug_Input = !debug_Input; Menu(); break;
-        case 6: Menu(); break;
-        case 7: debug_CSV = !debug_CSV; Menu(); break;
-        case Menu_Quit: menu_current = Menu_Start; Menu(); break;
-        default:
-          Serial_clear();
-          activeSerial->printf("Debug\r\n");
-          activeSerial->printf("--------------------\r\n");
-          activeSerial->printf("[1] CAN1\r\n");
-          activeSerial->printf("[2] CAN2\r\n");
-          activeSerial->printf("[3] Current\r\n");
-          activeSerial->printf("[4] Output Check: %s\r\n",debug_Output?"ON":"OFF");
-          activeSerial->printf("[5] Input Check\r\n");
-          activeSerial->printf("[6] ---\r\n");
-          activeSerial->printf("[7] CSV Output\r\n");
-          activeSerial->printf("\r\n");  
-          activeSerial->printf("[q] Quit\r\n");  
-      }
-    break;          
-  }
-}
-
 void Serial_clear(){
   // Form feed
   activeSerial->write(12);
@@ -2039,8 +1266,8 @@ void ChargeCurrentLimit(uint16_t _tmp_chargecurrent){
   uint16_t EndCurrent = settings.ChargeCurrentEnd / settings.nChargers;
   int16_t tmp_chargecurrent = 0; // can get negative by mapping
   uint16_t ChargeMaxCurrent = 0;
-  static uint16_t chargecurrentlast = 0;   // in 0,1A#
-  static uint32_t chargecurrent_Timer = 0;
+  static uint16_t chargecurrentlast = 0;   // in 0,1A
+  //static uint32_t chargecurrent_Timer = 0;
   //static bool chargecurrent_Taper = false;
   //uint16_t Taper_Time = 30000; // 10s
   ///Start at no derating///
@@ -2096,6 +1323,7 @@ void ChargeCurrentLimit(uint16_t _tmp_chargecurrent){
 
   // compensate for consumers if Chargecurrent is 0
   // [ToDO] smoothing with P/I/D Controller?
+  // [ToTest] Creates weird behavior when chargecurrent is zero
   if(chargecurrent == 0 && currentact < 0){
     chargecurrent = chargecurrentlast + (currentact / 100 / settings.nChargers) * -1;
   }
@@ -2103,11 +1331,11 @@ void ChargeCurrentLimit(uint16_t _tmp_chargecurrent){
   // overwrite with passed charge current if lower
   chargecurrent = _tmp_chargecurrent < chargecurrent ? _tmp_chargecurrent : chargecurrent;
 
-  // [ToTest] limit to 2A above actual current. 
-  // replace "20" with settings in struct
+  // limit to XA above actual current when near hysteresis
+  // replace "30" with settings in struct
   // Limit charge current increase to X above actual current. For Slow Inverters
-  if (chargecurrent > (currentact / 100) + 20){
-    chargecurrent = currentact < 0 ? 20 : (currentact / 100) + 20;
+  if (((bms.getHighCellVolt() > (settings.ChargeVSetpoint - settings.ChargeHys * 1.5))) && (chargecurrent > (currentact / 100) + 30)){
+    chargecurrent = currentact < 0 ? 30 : (currentact / 100) + 30;
   }
 
   /*
@@ -2182,7 +1410,7 @@ void Input_Debug(){
 
 void Output_debug(){
   // 5s each when looped every 500ms
-  if (output_debug_counter < 10){
+  if (debug_output_counter < 10){
     digitalWrite(OUT1, HIGH);
     digitalWrite(OUT2, HIGH);
     digitalWrite(OUT3, HIGH);
@@ -2201,8 +1429,8 @@ void Output_debug(){
     analogWrite(OUT7, 0);
     analogWrite(OUT8, 0);
   }
-  output_debug_counter ++;
-  if (output_debug_counter > 20){output_debug_counter = 0;}
+  debug_output_counter ++;
+  if (debug_output_counter > 20){debug_output_counter = 0;}
 }
 
 void Dash_update(){
@@ -2312,6 +1540,12 @@ void CAN_read(){
   }
 }
 
+void CAN_send(byte CAN_Nr, CAN_message_t MSG){
+  if(CAN_Nr & 1){can1.write(MSG);}
+  if(CAN_Nr & 2){can2.write(MSG);}
+  if(debug_CAN1 || debug_CAN2){CAN_Debug_OUT(CAN_Nr, MSG);}
+}
+
 void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   static uint32_t CAN_BMC_Std_send_Timer = 0;
   if(millis() - CAN_BMC_Std_send_Timer <= 1000){return;} // Timer 1s;
@@ -2334,8 +1568,11 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   MSG.buf[5] = highByte(discurrent);
   MSG.buf[6] = lowByte(uint16_t(round(float(settings.UnderVWarn)/100 * settings.Scells)));
   MSG.buf[7] = highByte(uint16_t(round(float(settings.UnderVWarn)/100 * settings.Scells)));
+  CAN_send(CAN_Nr, MSG);
+  /*
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
+  */
 
   delay(2);
   MSG.id  = 0x355;
@@ -2347,8 +1584,11 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   MSG.buf[5] = highByte(SOC * 10);
   MSG.buf[6] = 0;
   MSG.buf[7] = 0;
+  CAN_send(CAN_Nr, MSG);
+  /*
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
+  */
 
   delay(2);
   MSG.id  = 0x356;
@@ -2360,8 +1600,11 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   MSG.buf[5] = highByte(bms.getAvgTemperature());
   MSG.buf[6] = 0;
   MSG.buf[7] = 0;
+  CAN_send(CAN_Nr, MSG);
+  /*
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
+  */
 
   //[ToDo] Pylontech Errors & Warnings / Protection
   //MSG.id = 0x359
@@ -2377,9 +1620,11 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   MSG.buf[5] = warning[1];
   MSG.buf[6] = warning[2];
   MSG.buf[7] = warning[3];
+  CAN_send(CAN_Nr, MSG);
+  /*  
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
-
+  */
   /*
   0x35C request Flag
   Byte 0: Bit7 - Charge Enable, Bit6 - Discharge Enable, Bit5 - Request force Charge, Bit4 - Request force Charge 2, Bit3 - Request full Charge
@@ -2395,8 +1640,11 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   MSG.buf[5] = bmcname[5];
   MSG.buf[6] = bmcname[6];
   MSG.buf[7] = bmcname[7];
+  CAN_send(CAN_Nr, MSG);
+  /*
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
+  */
 
   delay(2);
   MSG.id  = 0x370;
@@ -2408,8 +1656,11 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   MSG.buf[5] = bmcmanu[5];
   MSG.buf[6] = bmcmanu[6];
   MSG.buf[7] = bmcmanu[7];
+  CAN_send(CAN_Nr, MSG);
+  /*
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
+  */
 
 /* [ToDo] what for?
   if (balancecells == 1){
@@ -2443,8 +1694,11 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   MSG.buf[5] = 0x00;
   MSG.buf[6] = 0x00;
   MSG.buf[7] = 0x00;
+  CAN_send(CAN_Nr, MSG);
+  /*
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
+  */
 
   delay(2);
   MSG.id  = 0x373; // non standard
@@ -2456,8 +1710,11 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   MSG.buf[5] = highByte(uint16_t(bms.getLowTemperature() + 273.15));
   MSG.buf[6] = lowByte(uint16_t(bms.getHighTemperature() + 273.15));
   MSG.buf[7] = highByte(uint16_t(bms.getHighTemperature() + 273.15));
+  CAN_send(CAN_Nr, MSG);
+  /*
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
+  */
 
   delay(2);
   MSG.id  = 0x379; // non standard, installed capacity, Power in kW, [ToDo] add Status?
@@ -2469,8 +1726,11 @@ void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
   MSG.buf[5] = 0x00;
   MSG.buf[6] = 0x00;
   MSG.buf[7] = 0x00;
+  CAN_send(CAN_Nr, MSG);
+  /*
   if(CAN_Nr & 1){can1.write(MSG);}
   if(CAN_Nr & 2){can2.write(MSG);}
+  */
 
   CAN_BMC_Std_send_Timer = millis();
 }
@@ -2491,9 +1751,11 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.buf[5] = highByte(int16_t(bms.getAvgTemperature() + 1000));
     MSG.buf[6] = SOC;
     MSG.buf[7] = SOH_calc();
+    CAN_send(CAN_Nr, MSG);
+    /*
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
-
+    */
     delay(2);
     MSG.id  = 0x4220 + settings.batteryID;
     if (storagemode){
@@ -2509,8 +1771,11 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.buf[5] = highByte(chargecurrent + 30000);
     MSG.buf[6] = lowByte(discurrent + 30000);
     MSG.buf[7] = highByte(discurrent + 30000);
+    CAN_send(CAN_Nr, MSG);
+    /*
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
+    */
 
     delay(2);
     MSG.id  = 0x4230 + settings.batteryID;
@@ -2522,8 +1787,11 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.buf[5] = 0; // MAX Single Battery Cell Voltage Number [ToDo]
     MSG.buf[6] = 0; // MIN Single Battery Cell Voltage Number [ToDo]
     MSG.buf[7] = 0; // MIN Single Battery Cell Voltage Number [ToDo]
+    CAN_send(CAN_Nr, MSG);
+    /*
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
+    */
 
     delay(2);
     MSG.id  = 0x4240 + settings.batteryID;
@@ -2535,8 +1803,11 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.buf[5] = 0; // MAX Single Battery Cell Temperature Number [ToDo]
     MSG.buf[6] = 0; // MIN Single Battery Cell Temperature Number [ToDo]
     MSG.buf[7] = 0; // MIN Single Battery Cell VolTemperaturetage Number [ToDo]
+    CAN_send(CAN_Nr, MSG);
+    /*
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
+    */
 
     // Errors & Alarms [ToDo]
     delay(2);
@@ -2572,8 +1843,11 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.buf[5] = highByte(tmpAlarm); // Alarm
     MSG.buf[6] = 0; // Protection same as Alarm? [ToDo]
     MSG.buf[7] = 0; // Protection same as Alarm? [ToDo]
+    CAN_send(CAN_Nr, MSG);
+    /*
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
+    */
 
     MSG.id  = 0x4260 + settings.batteryID; // Module Voltage MIN / MAX & Nr.
     MSG.id  = 0x4270 + settings.batteryID; // Module Temp. MIN / MAX & Nr.
@@ -2594,9 +1868,11 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.buf[5] = 4; // Software Version e.g. 3.4 (03/2024)
     MSG.buf[6] = 0; // Software Version ??
     MSG.buf[7] = 0; // Software Version ??
+    CAN_send(CAN_Nr, MSG);
+    /*
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
-
+    */
     delay(2);
     MSG.id = 0x7320 + settings.batteryID;
     MSG.buf[0] = lowByte(bms.getNumModules());
@@ -2607,8 +1883,11 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.buf[5] = 0; // Volage Level?
     MSG.buf[6] = 0; // AH Number?
     MSG.buf[7] = 0; // AH NUmber?
+    CAN_send(CAN_Nr, MSG);
+    /*
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
+    */
 
     delay(2);
     MSG.id = 0x7330 + settings.batteryID;
@@ -2620,8 +1899,11 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.buf[5] = bmcname[5];
     MSG.buf[6] = bmcname[6];
     MSG.buf[7] = bmcname[7];
+    CAN_send(CAN_Nr, MSG);
+    /*
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
+    */
 
     delay(2);
     MSG.id = 0x7340 + settings.batteryID;
@@ -2633,8 +1915,11 @@ void CAN_BMC_HV_send(byte CAN_Nr, CAN_message_t inMSG){ //BMC CAN HV Messages
     MSG.buf[5] = 0;
     MSG.buf[6] = 0;
     MSG.buf[7] = 0;
+    CAN_send(CAN_Nr, MSG);
+    /*
     if(CAN_Nr & 1){can1.write(MSG);}
     if(CAN_Nr & 2){can2.write(MSG);}
+    */
   }
 }
 
@@ -2659,8 +1944,11 @@ void CAN_Charger_Send(byte CAN_Nr){
       MSG.buf[6] = 0x00;
       MSG.buf[7] = 0x00;
 
+      CAN_send(CAN_Nr, MSG);
+      /*
       if(CAN_Nr & 1){can1.write(MSG);}
       if(CAN_Nr & 2){can2.write(MSG);}
+      */
       MSG.flags.extended = 0;
     break;
 
@@ -2675,8 +1963,11 @@ void CAN_Charger_Send(byte CAN_Nr){
       MSG.buf[5] = lowByte(chargecurrent);
       MSG.buf[6] = highByte(chargecurrent);
 
+      CAN_send(CAN_Nr, MSG);
+      /*
       if(CAN_Nr & 1){can1.write(MSG);}
       if(CAN_Nr & 2){can2.write(MSG);}
+      */
     break;
 
     case Charger_BrusaNLG5:
@@ -2695,8 +1986,11 @@ void CAN_Charger_Send(byte CAN_Nr){
       MSG.buf[4] = lowByte(uint16_t(round(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerendbulk) / 1000) * 10)));
       MSG.buf[5] = highByte(chargecurrent);
       MSG.buf[6] = lowByte(chargecurrent);
+      CAN_send(CAN_Nr, MSG);
+      /*
       if(CAN_Nr & 1){can1.write(MSG);}
       if(CAN_Nr & 2){can2.write(MSG);}
+      */
 
       delay(2);
 
@@ -2714,16 +2008,22 @@ void CAN_Charger_Send(byte CAN_Nr){
       MSG.buf[4] = lowByte(uint16_t(round(((float(settings.ChargeVSetpoint) / 1000 * settings.Scells) - float(chargerend) / 1000) * 10)));
       MSG.buf[5] = highByte(chargecurrent);
       MSG.buf[6] = lowByte(chargecurrent);
+      CAN_send(CAN_Nr, MSG);
+      /*
       if(CAN_Nr & 1){can1.write(MSG);}
       if(CAN_Nr & 2){can2.write(MSG);}
+      */
     break;
 
     case Charger_ChevyVolt:
       MSG.id  = 0x30E;
       MSG.len = 1;
       MSG.buf[0] = 0x02; //only HV charging , 0x03 hv and 12V charging
+      CAN_send(CAN_Nr, MSG);
+      /*
       if(CAN_Nr & 1){can1.write(MSG);}
       if(CAN_Nr & 2){can2.write(MSG);}
+      */
 
       MSG.id  = 0x304;
       MSG.len = 4;
@@ -2737,8 +2037,11 @@ void CAN_Charger_Send(byte CAN_Nr){
         MSG.buf[2] = highByte(400);
         MSG.buf[3] = lowByte(400);
       }
+      CAN_send(CAN_Nr, MSG);
+      /*
       if(CAN_Nr & 1){can1.write(MSG);}
       if(CAN_Nr & 2){can2.write(MSG);}
+      */
     break;
 
     case Charger_Coda:
@@ -2762,8 +2065,11 @@ void CAN_Charger_Send(byte CAN_Nr){
         MSG.buf[6] = 0x96;
       }
       MSG.buf[7] = 0x01; //HV charging
+      CAN_send(CAN_Nr, MSG);
+      /*
       if(CAN_Nr & 1){can1.write(MSG);}
       if(CAN_Nr & 2){can2.write(MSG);}
+      */
     break;
   }
 }

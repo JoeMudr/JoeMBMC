@@ -239,7 +239,7 @@ void BMSManager::readModulesValues(CAN_message_t &msg){
     if(chkRead){ UpdateValues(); LastRead = millis();}
 }
 
-void BMSManager::printPackDetails(){
+void BMSManager::printPackDetails(Stream* activeSerial){
     for (byte moduleNr = 0; moduleNr < MAX_MODULE_ADDR; moduleNr++){
         if(modules[moduleNr].isExisting()){
             activeSerial->printf("Module #%i%s %imV",moduleNr,moduleNr<10?" ":"",modules[moduleNr].getModuleVoltage());
@@ -477,7 +477,7 @@ void BMSManager::clearFaults(){
     }
 }
 
-CAN_Struct BMSManager::Balancing(uint16_t BalHys, bool active){
+CAN_Struct BMSManager::Balancing(uint16_t BalHys, bool active, Stream* activeSerial){
     CAN_Struct BalanceMatrix;
     BalanceMatrix = clearCANStruct();
 

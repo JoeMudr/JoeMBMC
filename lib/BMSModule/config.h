@@ -15,10 +15,31 @@
 // Serial port for Display
 #define Serial_Display Serial4
 
+/*
 #ifndef ACTIVESERIAL
 #define ACTIVESERIAL
 extern Stream* activeSerial;
 #endif
+*/
+
+//BMC wiring//
+//#define doesn't work here because Pins are used in Arrays.
+const byte IN_ACUR2 = A0;      // analogue current sensor 1
+const byte IN_ACUR1 = A1;      // analogue current sensor 2
+const byte IN_BOD = A10;       // brownout detection on ADC pin [ToDo]
+const byte IN1_Key = 19;    // input 1 - high active
+const byte IN2_Gen = 18;    // input 2 - high active
+const byte IN3_AC = 20;     // input 3 - high active
+const byte IN4_HVIL = 21;   // input 4 - high active
+const byte OUT1 = 6;        // output 1 - high active
+const byte OUT2 = 5;        // output 2 - high active
+const byte OUT3 = 4;        // output 3 - high active
+const byte OUT4 = 3;        // output 4 - high active
+const byte OUT5 = 11;       // output 5 - Low active / PWM
+const byte OUT6 = 12;       // output 6 - Low active / PWM
+const byte OUT7 = 10;       // output 7 - Low active / PWM
+const byte OUT8 = 9;        // output 8 - Low active / PWM
+const byte LED = 13;
 
 // Tesla BMS_Module Comms
 #define REG_DEV_STATUS      0
@@ -243,3 +264,20 @@ typedef struct {
   byte Warning_Blink_Hz;
   byte Error_Blink_Hz;
 } EEPROMSettings;
+
+#define Out_States_Max 13
+
+//IDs for Out_Functions
+#define Out_undefined 0
+#define Out_Cont_Precharge 1
+#define Out_Cont_Pos 2
+#define Out_Cont_Neg 3
+#define Out_Discharge 4
+#define Out_Charge 5
+#define Out_Error 6
+#define Out_Warning 7
+#define Out_Err_Warn 8
+#define Out_Heating 9
+#define Out_Cooling 10
+#define Out_Gauge 11
+#define Out_Balance 12
