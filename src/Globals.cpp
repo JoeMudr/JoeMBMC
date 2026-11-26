@@ -3,7 +3,7 @@
 
 /////Version Identifier/////////
 // in format YYMMDD, e.g. 26.05.2020 -> 260520
-uint32_t firmver = 260509; 
+uint32_t firmver = 261126; 
 
 uint32_t Uptime = 0;
 
@@ -154,8 +154,8 @@ byte TCU_REL4 = 0;
 IntervalTimer Timer_mAmpSec;
 
 // CAN
-FlexCAN_T4<CAN1> can1;
-FlexCAN_T4<CAN2> can2;
+//FlexCAN_T4<CAN1> can1;
+//FlexCAN_T4<CAN2> can2;
 
 ADC *adc = new ADC();
 Stream* activeSerial = &Serial_USB;

@@ -24,6 +24,10 @@
 #include "Watchdog_t4.h"  //https://github.com/tonton81/WDT_T4
 #include "Globals.h"
 
+//CAN - Don't outsource to globals! Breaks the FlexCAN_T4 library. It needs to be in the main file.
+FlexCAN_T4<CAN1> can1;
+FlexCAN_T4<CAN2> can2;
+
 
 void loadDefaultSettings(){
   settings.version = EEPROM_VERSION;
@@ -151,9 +155,7 @@ void setup(){
   // manage EEPROM versions
   if (settings.version != EEPROM_VERSION){ loadDefaultSettings(); }
   
-  can1_start();
-  can2_start();
-
+  
   //if using enable pins on a transceiver they need to be set on
 
   adc->adc0->setAveraging(16); // set number of averages
@@ -180,6 +182,9 @@ void setup(){
   BMSInit();
 
   Timer_mAmpSec.begin(mAmpsec_calc, 500000);
+
+  can1_start();
+  can2_start();
 }
 
 //called by Timer
@@ -197,6 +202,7 @@ void mAmpsec_calc(){
 }
 
 void loop(){
+  
   static byte Modules_Print_ON = 1;
   static byte Out_Print_ON = 0;
 
@@ -223,7 +229,6 @@ void loop(){
   }
 
   WarnAlarm_Check();
-
   if (!debug_Output){
     if (settings.ESSmode){BMC_Stat = ESS_CondCheck(BMC_Stat);}
     else {BMC_Stat = Vehicle_CondCheck(BMC_Stat);}
@@ -252,11 +257,12 @@ void loop(){
     Uptime++;
   }
 
+    
   // 0.5s loop
   static uint32_t looptime = 0;
   if (millis() - looptime > 500){ 
     looptime = millis();
-    
+
     // TCAP is negative. 0 = full, settings.CAP * -1 is empty.
     TCAP = settings.Pstrings * CAP_Temp_alteration() * -1;
     TCAP_Wh = TCAP * round(double(bms.getPackVoltage()) / 1000) * -1; // [ToDo] value will fluctuate
@@ -277,18 +283,20 @@ void loop(){
       Reset_Cause(lastResetCause);
     } //"debug" output on serial console
     //if (debug_CSV){ bms.printAllCSV(millis(), currentact, SOC); }
+    
     if (debug_Input){ Input_Debug(); }
     if (debug_Output){ Output_debug(); }
     else{ Gauge_update(); }
-    
     SOC_update();
     Currentavg_Calc();
-
     if (settings.secondarySerial == 0){ Dash_update(); }//Info on serial bus 2
+    
+
     //if (settings.secondarySerial == 2){ BT_update(); }// --> Bluetooth App
     //WDT reset;
+
     watchdog.feed();
-  }
+  }   
 }
 
 /* ==================================================================== */
@@ -621,7 +629,7 @@ void BMC_Statemachine(byte status){
       set_OUT_States(); // all off
       Balancing(true);
       Warn_Out_handle();
-      CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]);
+      //CAN_BMC_Std_send(settings.CAN_Map[0][CAN_BMC_std]); [ToDo] why send in ready?
     break;
     case Stat_Drive:
       set_OUT_States(); // all off
@@ -657,7 +665,7 @@ void BMC_Statemachine(byte status){
     break;
     case Stat_Charged:
       set_OUT_States(); // all off
-      // enable gauge if key is on    
+      // enable gauge if key is on  
       if (digitalRead(IN1_Key) == HIGH){
         set_OUT_States(Out_Gauge);
         }
@@ -1510,6 +1518,8 @@ void Nextion_send(String var, String val){
 void can1_start(){
   can1.begin();
   can1.setBaudRate(settings.CAN1_Speed);
+  //NVIC_DISABLE_IRQ(IRQ_CAN1);
+  NVIC_SET_PRIORITY(IRQ_CAN1, 192);
 }
 
 void can2_start(){
@@ -1547,6 +1557,7 @@ void CAN_send(byte CAN_Nr, CAN_message_t MSG){
 }
 
 void CAN_BMC_Std_send(byte CAN_Nr){ //BMC standard CAN Messages
+  //activeSerial->print("HIT");
   static uint32_t CAN_BMC_Std_send_Timer = 0;
   if(millis() - CAN_BMC_Std_send_Timer <= 1000){return;} // Timer 1s;
   if(!CAN_Nr){return;} // No CanNr. set.
